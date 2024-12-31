@@ -3,6 +3,21 @@
 This document outlines how we manage the dependencies that GitHub Desktop needs,
 as some need to be handled differently to others
 
+## General Guidelines
+
+In the interest of stability and caution we tend to stay a version (or more) behind on our most critical dependencies. We vary whether this is a major, minor, or patch version depending on the development practices of the dependency's project.
+
+| Dependency  | Versions Behind Latest |
+| --- | --- |
+| electron | >= 1 major |
+| electron-packager | >= 1 major |
+| electron-winstaller | >= 1 minor |
+| typescript | >= 1 minor |
+| codemirror | >= 1 minor |
+| react | >= 1 minor |
+| react-dom | >= 1 minor |
+| keytar | >= 1 minor |
+
 ## The Impact Of A Dependency
 
 We group the dependencies in `package.json` and `app/package.json` into three
@@ -60,7 +75,6 @@ These are the most important dependencies to the app, and include:
  - `package.json`
    - `@types/node`
    - `electron`
-   - `electron-builder`
    - `electron-packager`
    - `electron-winstaller`
    - `typescript`
@@ -84,7 +98,7 @@ contribution is opened by the community.
 ### Application dependencies
 
 This group of dependencies represent the rest of the listed dependencies in
-`app/pacakge.json` - there are lots of small dependencies which are approachable
+`app/package.json` - there are lots of small dependencies which are approachable
 for external contributions.
 
 If you are interested in upgrading one of these, take a look at where it is

@@ -1,32 +1,71 @@
 import * as Path from 'path'
 import { ChildProcess } from 'child_process'
-import * as FSE from 'fs-extra'
 import { GitError } from 'dugite'
-import * as byline from 'byline'
+import byline from 'byline'
 
 import { Repository } from '../../models/repository'
-import {
-  RebaseInternalState,
-  RebaseProgressOptions,
-  GitRebaseProgress,
-} from '../../models/rebase'
-import { IRebaseProgress } from '../../models/progress'
+import { RebaseInternalState, RebaseProgressOptions } from '../../models/rebase'
+import { IMultiCommitOperationProgress } from '../../models/progress'
 import {
   WorkingDirectoryFileChange,
   AppFileStatusKind,
 } from '../../models/status'
 import { ManualConflictResolution } from '../../models/manual-conflict-resolution'
-import { CommitOneLine } from '../../models/commit'
+import { Commit, CommitOneLine } from '../../models/commit'
 
 import { merge } from '../merge'
 import { formatRebaseValue } from '../rebase'
 
-import { git, IGitResult, IGitExecutionOptions } from './core'
+import {
+  git,
+  IGitExecutionOptions,
+  gitRebaseArguments,
+  IGitStringExecutionOptions,
+  IGitStringResult,
+} from './core'
 import { stageManualConflictResolution } from './stage'
 import { stageFiles } from './update-index'
 import { getStatus } from './status'
-import { getCommitsInRange } from './rev-list'
+import { getCommitsBetweenCommits } from './rev-list'
 import { Branch } from '../../models/branch'
+import { readFile } from 'fs/promises'
+import { pathExists } from '../../ui/lib/path-exists'
+
+/** The app-specific results from attempting to rebase a repository */
+export enum RebaseResult {
+  /**
+   * Git completed the rebase without reporting any errors, and the caller can
+   * signal success to the user.
+   */
+  CompletedWithoutError = 'CompletedWithoutError',
+  /**
+   * Git completed the rebase without reporting any errors, but the branch was
+   * already up to date and there was nothing to do.
+   */
+  AlreadyUpToDate = 'AlreadyUpToDate',
+  /**
+   * The rebase encountered conflicts while attempting to rebase, and these
+   * need to be resolved by the user before the rebase can continue.
+   */
+  ConflictsEncountered = 'ConflictsEncountered',
+  /**
+   * The rebase was not able to continue as tracked files were not staged in
+   * the index.
+   */
+  OutstandingFilesNotStaged = 'OutstandingFilesNotStaged',
+  /**
+   * The rebase was not attempted because it could not check the status of the
+   * repository. The caller needs to confirm the repository is in a usable
+   * state.
+   */
+  Aborted = 'Aborted',
+  /**
+   * An unexpected error as part of the rebase flow was caught and handled.
+   *
+   * Check the logs to find the relevant Git details.
+   */
+  Error = 'Error',
+}
 
 /**
  * Check the `.git/REBASE_HEAD` file exists in a repository to confirm
@@ -34,7 +73,7 @@ import { Branch } from '../../models/branch'
  */
 function isRebaseHeadSet(repository: Repository) {
   const path = Path.join(repository.path, '.git', 'REBASE_HEAD')
-  return FSE.pathExists(path)
+  return pathExists(path)
 }
 
 /**
@@ -59,24 +98,24 @@ export async function getRebaseInternalState(
   let baseBranchTip: string | null = null
 
   try {
-    originalBranchTip = await FSE.readFile(
-      Path.join(repository.path, '.git', 'rebase-apply', 'orig-head'),
+    originalBranchTip = await readFile(
+      Path.join(repository.path, '.git', 'rebase-merge', 'orig-head'),
       'utf8'
     )
 
     originalBranchTip = originalBranchTip.trim()
 
-    targetBranch = await FSE.readFile(
-      Path.join(repository.path, '.git', 'rebase-apply', 'head-name'),
+    targetBranch = await readFile(
+      Path.join(repository.path, '.git', 'rebase-merge', 'head-name'),
       'utf8'
     )
 
     if (targetBranch.startsWith('refs/heads/')) {
-      targetBranch = targetBranch.substr(11).trim()
+      targetBranch = targetBranch.substring(11).trim()
     }
 
-    baseBranchTip = await FSE.readFile(
-      Path.join(repository.path, '.git', 'rebase-apply', 'onto'),
+    baseBranchTip = await readFile(
+      Path.join(repository.path, '.git', 'rebase-merge', 'onto'),
       'utf8'
     )
 
@@ -97,7 +136,7 @@ export async function getRebaseInternalState(
 }
 
 /**
- * Inspect the `.git/rebase-apply` folder and convert the current rebase state
+ * Inspect the `.git/rebase-merge` folder and convert the current rebase state
  * into data that can be provided to the rebase flow to update the application
  * state.
  *
@@ -107,10 +146,8 @@ export async function getRebaseInternalState(
  *   - when a `git pull --rebase` was run and encounters conflicts
  *
  */
-export async function getRebaseSnapshot(
-  repository: Repository
-): Promise<{
-  progress: GitRebaseProgress
+export async function getRebaseSnapshot(repository: Repository): Promise<{
+  progress: IMultiCommitOperationProgress
   commits: ReadonlyArray<CommitOneLine>
 } | null> {
   const rebaseHead = await isRebaseHeadSet(repository)
@@ -123,14 +160,14 @@ export async function getRebaseSnapshot(
   let originalBranchTip: string | null = null
   let baseBranchTip: string | null = null
 
-  // if the repository is in the middle of a rebase `.git/rebase-apply` will
+  // if the repository is in the middle of a rebase `.git/rebase-merge` will
   // contain all the patches of commits that are being rebased into
   // auto-incrementing files, e.g. `0001`, `0002`, `0003`, etc ...
 
   try {
     // this contains the patch number that was recently applied to the repository
-    const nextText = await FSE.readFile(
-      Path.join(repository.path, '.git', 'rebase-apply', 'next'),
+    const nextText = await readFile(
+      Path.join(repository.path, '.git', 'rebase-merge', 'msgnum'),
       'utf8'
     )
 
@@ -138,14 +175,14 @@ export async function getRebaseSnapshot(
 
     if (isNaN(next)) {
       log.warn(
-        `[getCurrentProgress] found '${nextText}' in .git/rebase-apply/next which could not be parsed to a valid number`
+        `[getCurrentProgress] found '${nextText}' in .git/rebase-merge/msgnum which could not be parsed to a valid number`
       )
       next = -1
     }
 
     // this contains the total number of patches to be applied to the repository
-    const lastText = await FSE.readFile(
-      Path.join(repository.path, '.git', 'rebase-apply', 'last'),
+    const lastText = await readFile(
+      Path.join(repository.path, '.git', 'rebase-merge', 'end'),
       'utf8'
     )
 
@@ -153,20 +190,20 @@ export async function getRebaseSnapshot(
 
     if (isNaN(last)) {
       log.warn(
-        `[getCurrentProgress] found '${lastText}' in .git/rebase-apply/last which could not be parsed to a valid number`
+        `[getCurrentProgress] found '${lastText}' in .git/rebase-merge/last which could not be parsed to a valid number`
       )
       last = -1
     }
 
-    originalBranchTip = await FSE.readFile(
-      Path.join(repository.path, '.git', 'rebase-apply', 'orig-head'),
+    originalBranchTip = await readFile(
+      Path.join(repository.path, '.git', 'rebase-merge', 'orig-head'),
       'utf8'
     )
 
     originalBranchTip = originalBranchTip.trim()
 
-    baseBranchTip = await FSE.readFile(
-      Path.join(repository.path, '.git', 'rebase-apply', 'onto'),
+    baseBranchTip = await readFile(
+      Path.join(repository.path, '.git', 'rebase-merge', 'onto'),
       'utf8'
     )
 
@@ -182,13 +219,13 @@ export async function getRebaseSnapshot(
     const percentage = next / last
     const value = formatRebaseValue(percentage)
 
-    const commits = await getCommitsInRange(
+    const commits = await getCommitsBetweenCommits(
       repository,
       baseBranchTip,
       originalBranchTip
     )
 
-    if (commits.length === 0) {
+    if (commits === null || commits.length === 0) {
       return null
     }
 
@@ -198,16 +235,17 @@ export async function getRebaseSnapshot(
     const hasValidCommit =
       commits.length > 0 &&
       nextCommitIndex >= 0 &&
-      nextCommitIndex <= commits.length
+      nextCommitIndex < commits.length
 
     const currentCommitSummary = hasValidCommit
       ? commits[nextCommitIndex].summary
-      : null
+      : ''
 
     return {
       progress: {
+        kind: 'multiCommitOperation',
         value,
-        rebasedCommitCount: next,
+        position: next,
         totalCommitCount: last,
         currentCommitSummary,
       },
@@ -225,7 +263,7 @@ export async function getRebaseSnapshot(
 async function readRebaseHead(repository: Repository): Promise<string | null> {
   try {
     const rebaseHead = Path.join(repository.path, '.git', 'REBASE_HEAD')
-    const rebaseCurrentCommitOutput = await FSE.readFile(rebaseHead, 'utf8')
+    const rebaseCurrentCommitOutput = await readFile(rebaseHead, 'utf8')
     return rebaseCurrentCommitOutput.trim()
   } catch (err) {
     log.warn(
@@ -237,65 +275,65 @@ async function readRebaseHead(repository: Repository): Promise<string | null> {
 }
 
 /** Regex for identifying when rebase applied each commit onto the base branch */
-const rebaseApplyingRe = /^Applying: (.*)/
+const rebasingRe = /^Rebasing \((\d+)\/(\d+)\)$/
 
 /**
- * A parser to read and emit rebase progress from Git `stdout`
+ * A parser to read and emit rebase progress from Git `stderr`
  */
 class GitRebaseParser {
-  public constructor(
-    private rebasedCommitCount: number,
-    private readonly totalCommitCount: number
-  ) {}
+  public constructor(private readonly commits: ReadonlyArray<CommitOneLine>) {}
 
-  public parse(line: string): IRebaseProgress | null {
-    const match = rebaseApplyingRe.exec(line)
-    if (match === null || match.length !== 2) {
+  public parse(line: string): IMultiCommitOperationProgress | null {
+    const match = rebasingRe.exec(line)
+    if (match === null || match.length !== 3) {
       // Git will sometimes emit other output (for example, when it tries to
       // resolve conflicts) and this does not match the expected output
       return null
     }
 
-    const currentCommitSummary = match[1]
-    this.rebasedCommitCount++
+    const rebasedCommitCount = parseInt(match[1], 10)
+    const totalCommitCount = parseInt(match[2], 10)
 
-    const progress = this.rebasedCommitCount / this.totalCommitCount
-    const value = formatRebaseValue(progress)
-
-    // TODO: dig into why we sometimes get an extra progress event reported
-    if (this.rebasedCommitCount > this.totalCommitCount) {
-      this.rebasedCommitCount = this.totalCommitCount
+    if (isNaN(rebasedCommitCount) || isNaN(totalCommitCount)) {
+      return null
     }
 
+    const currentCommitSummary =
+      this.commits[rebasedCommitCount - 1]?.summary ?? ''
+
+    const progress = rebasedCommitCount / totalCommitCount
+    const value = formatRebaseValue(progress)
+
     return {
-      kind: 'rebase',
-      title: `Rebasing commit ${this.rebasedCommitCount} of ${
-        this.totalCommitCount
-      } commits`,
+      kind: 'multiCommitOperation',
       value,
-      rebasedCommitCount: this.rebasedCommitCount,
-      totalCommitCount: this.totalCommitCount,
+      position: rebasedCommitCount,
+      totalCommitCount: totalCommitCount,
       currentCommitSummary,
     }
   }
 }
 
-function configureOptionsForRebase(
-  options: IGitExecutionOptions,
+function configureOptionsForRebase<T extends IGitExecutionOptions>(
+  options: T,
   progress?: RebaseProgressOptions
 ) {
   if (progress === undefined) {
     return options
   }
 
-  const { rebasedCommitCount, totalCommitCount, progressCallback } = progress
+  const { commits, progressCallback } = progress
 
   return merge(options, {
     processCallback: (process: ChildProcess) => {
-      const parser = new GitRebaseParser(rebasedCommitCount, totalCommitCount)
+      // If Node.js encounters a synchronous runtime error while spawning
+      // `stderr` will be undefined and the error will be emitted asynchronously
+      if (process.stderr === null) {
+        return
+      }
+      const parser = new GitRebaseParser(commits)
 
-      // rebase emits progress messages on `stdout`, not `stderr`
-      byline(process.stdout).on('data', (line: string) => {
+      byline(process.stderr).on('data', (line: string) => {
         const progress = parser.parse(line)
 
         if (progress != null) {
@@ -322,32 +360,39 @@ export async function rebase(
   repository: Repository,
   baseBranch: Branch,
   targetBranch: Branch,
-  progressCallback?: (progress: IRebaseProgress) => void
+  progressCallback?: (progress: IMultiCommitOperationProgress) => void
 ): Promise<RebaseResult> {
-  const baseOptions: IGitExecutionOptions = {
+  const baseOptions: IGitStringExecutionOptions = {
     expectedErrors: new Set([GitError.RebaseConflicts]),
   }
 
   let options = baseOptions
 
   if (progressCallback !== undefined) {
-    const commits = await getCommitsInRange(
+    const commits = await getCommitsBetweenCommits(
       repository,
       baseBranch.tip.sha,
       targetBranch.tip.sha
     )
 
-    const totalCommitCount = commits.length
+    if (commits === null) {
+      // BadRevision can be raised here if git rev-list is unable to resolve a
+      // ref to a commit ID, so we need to signal to the caller that this rebase
+      // is not possible to perform
+      log.warn(
+        'Unable to rebase these branches because one or both of the refs do not exist in the repository'
+      )
+      return RebaseResult.Error
+    }
 
     options = configureOptionsForRebase(baseOptions, {
-      rebasedCommitCount: 0,
-      totalCommitCount,
+      commits,
       progressCallback,
     })
   }
 
   const result = await git(
-    ['rebase', baseBranch.name, targetBranch.name],
+    [...gitRebaseArguments(), 'rebase', baseBranch.name, targetBranch.name],
     repository.path,
     'rebase',
     options
@@ -361,39 +406,12 @@ export async function abortRebase(repository: Repository) {
   await git(['rebase', '--abort'], repository.path, 'abortRebase')
 }
 
-/** The app-specific results from attempting to rebase a repository */
-export enum RebaseResult {
-  /**
-   * Git completed the rebase without reporting any errors, and the caller can
-   * signal success to the user.
-   */
-  CompletedWithoutError = 'CompletedWithoutError',
-  /**
-   * The rebase encountered conflicts while attempting to rebase, and these
-   * need to be resolved by the user before the rebase can continue.
-   */
-  ConflictsEncountered = 'ConflictsEncountered',
-  /**
-   * The rebase was not able to continue as tracked files were not staged in
-   * the index.
-   */
-  OutstandingFilesNotStaged = 'OutstandingFilesNotStaged',
-  /**
-   * The rebase was not attempted because it could not check the status of the
-   * repository. The caller needs to confirm the repository is in a usable
-   * state.
-   */
-  Aborted = 'Aborted',
-  /**
-   * An unexpected error as part of the rebase flow was caught and handled.
-   *
-   * Check the logs to find the relevant Git details.
-   */
-  Error = 'Error',
-}
-
-function parseRebaseResult(result: IGitResult): RebaseResult {
+function parseRebaseResult(result: IGitStringResult): RebaseResult {
   if (result.exitCode === 0) {
+    if (result.stdout.trim().match(/^Current branch [^ ]+ is up to date.$/i)) {
+      return RebaseResult.AlreadyUpToDate
+    }
+
     return RebaseResult.CompletedWithoutError
   }
 
@@ -420,7 +438,8 @@ export async function continueRebase(
   repository: Repository,
   files: ReadonlyArray<WorkingDirectoryFileChange>,
   manualResolutions: ReadonlyMap<string, ManualConflictResolution> = new Map(),
-  progressCallback?: (progress: IRebaseProgress) => void
+  progressCallback?: (progress: IMultiCommitOperationProgress) => void,
+  gitEditor: string = ':'
 ): Promise<RebaseResult> {
   const trackedFiles = files.filter(f => {
     return f.status.kind !== AppFileStatusKind.Untracked
@@ -442,7 +461,7 @@ export async function continueRebase(
 
   await stageFiles(repository, otherFiles)
 
-  const status = await getStatus(repository)
+  const status = await getStatus(repository, false)
   if (status == null) {
     log.warn(
       `[continueRebase] unable to get status after staging changes, skipping any other steps`
@@ -459,11 +478,14 @@ export async function continueRebase(
     f => f.status.kind !== AppFileStatusKind.Untracked
   )
 
-  const baseOptions: IGitExecutionOptions = {
+  const baseOptions: IGitStringExecutionOptions = {
     expectedErrors: new Set([
       GitError.RebaseConflicts,
       GitError.UnresolvedConflicts,
     ]),
+    env: {
+      GIT_EDITOR: gitEditor,
+    },
   }
 
   let options = baseOptions
@@ -478,12 +500,8 @@ export async function continueRebase(
       return RebaseResult.Aborted
     }
 
-    const { progress } = snapshot
-    const { rebasedCommitCount, totalCommitCount } = progress
-
     options = configureOptionsForRebase(baseOptions, {
-      rebasedCommitCount,
-      totalCommitCount,
+      commits: snapshot.commits,
       progressCallback,
     })
   }
@@ -507,6 +525,73 @@ export async function continueRebase(
     ['rebase', '--continue'],
     repository.path,
     'continueRebase',
+    options
+  )
+
+  return parseRebaseResult(result)
+}
+
+/**
+ * Method for initiating interactive rebase in the app.
+ *
+ * In order to modify the interactive todo list during interactive rebase, we
+ * create a temporary todo list of our own. Pass that file's path into our
+ * interactive rebase and using the sequence.editor to cat replace the
+ * interactive todo list with the contents of our generated one.
+ *
+ * @param pathOfGeneratedTodo path to generated todo list for interactive rebase
+ * @param lastRetainedCommitRef the commit before the earliest commit to be
+ * changed during the interactive rebase or null if commit is root (first commit
+ * in history) of branch
+ * @param action a description of the action to be displayed in the progress
+ * dialog - i.e. Squash, Amend, etc..
+ */
+export async function rebaseInteractive(
+  repository: Repository,
+  pathOfGeneratedTodo: string,
+  lastRetainedCommitRef: string | null,
+  action: string = 'Interactive rebase',
+  gitEditor: string = ':',
+  progressCallback?: (progress: IMultiCommitOperationProgress) => void,
+  commits?: ReadonlyArray<Commit>
+): Promise<RebaseResult> {
+  const baseOptions: IGitStringExecutionOptions = {
+    expectedErrors: new Set([GitError.RebaseConflicts]),
+    env: {
+      GIT_SEQUENCE_EDITOR: undefined,
+      GIT_EDITOR: gitEditor,
+    },
+  }
+
+  let options = baseOptions
+
+  if (progressCallback !== undefined) {
+    if (commits === undefined) {
+      log.warn(`Unable to interactively rebase if no commits`)
+      return RebaseResult.Error
+    }
+
+    options = configureOptionsForRebase(baseOptions, {
+      commits,
+      progressCallback,
+    })
+  }
+
+  /* If the commit is the first commit in the branch, we cannot reference it
+  using the sha thus if lastRetainedCommitRef is null (we couldn't define it),
+  we must use the --root flag */
+  const ref = lastRetainedCommitRef == null ? '--root' : lastRetainedCommitRef
+  const result = await git(
+    [
+      '-c',
+      // This replaces interactive todo with contents of file at pathOfGeneratedTodo
+      `sequence.editor=cat "${pathOfGeneratedTodo}" >`,
+      'rebase',
+      '-i',
+      ref,
+    ],
+    repository.path,
+    action,
     options
   )
 

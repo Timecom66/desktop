@@ -6,6 +6,7 @@ import { Dispatcher } from '../dispatcher'
 import { Repository } from '../../models/repository'
 import { WorkingDirectoryStatus } from '../../models/status'
 import { getConflictedFiles } from '../../lib/status'
+import { MultiCommitOperationKind } from '../../models/multi-commit-operation'
 
 interface IContinueRebaseProps {
   readonly dispatcher: Dispatcher
@@ -13,16 +14,18 @@ interface IContinueRebaseProps {
   readonly workingDirectory: WorkingDirectoryStatus
   readonly rebaseConflictState: RebaseConflictState
   readonly isCommitting: boolean
+  readonly hasUntrackedChanges: boolean
 }
 
 export class ContinueRebase extends React.Component<IContinueRebaseProps, {}> {
   private onSubmit = async () => {
-    const { manualResolutions } = this.props.rebaseConflictState
+    const { rebaseConflictState } = this.props
 
     await this.props.dispatcher.continueRebase(
+      MultiCommitOperationKind.Rebase,
       this.props.repository,
       this.props.workingDirectory,
-      manualResolutions
+      rebaseConflictState
     )
   }
 
@@ -46,8 +49,14 @@ export class ContinueRebase extends React.Component<IContinueRebaseProps, {}> {
 
     const loading = this.props.isCommitting ? <Loading /> : undefined
 
+    const warnAboutUntrackedFiles = this.props.hasUntrackedChanges ? (
+      <div className="warning-untracked-files">
+        Untracked files will be excluded
+      </div>
+    ) : undefined
+
     return (
-      <div id="continue-rebase" role="group">
+      <div id="continue-rebase">
         <Button
           type="submit"
           className="commit-button"
@@ -58,6 +67,8 @@ export class ContinueRebase extends React.Component<IContinueRebaseProps, {}> {
           {loading}
           <span>{loading !== undefined ? 'Rebasing' : 'Continue rebase'}</span>
         </Button>
+
+        {warnAboutUntrackedFiles}
       </div>
     )
   }

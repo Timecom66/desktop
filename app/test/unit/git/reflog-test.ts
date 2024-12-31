@@ -5,20 +5,22 @@ import {
   createBranch,
   checkoutBranch,
   renameBranch,
-  getCheckoutsAfterDate,
+  getBranchCheckouts,
 } from '../../../src/lib/git'
 import { setupFixtureRepository } from '../../helpers/repositories'
-import * as moment from 'moment'
+import { exec } from 'dugite'
+import { offsetFromNow } from '../../../src/lib/offset-from'
 
 async function createAndCheckout(
   repository: Repository,
   name: string
 ): Promise<void> {
-  const branch = await createBranch(repository, name, null)
-  if (branch == null) {
+  await createBranch(repository, name, null)
+  const [branch] = await getBranches(repository, `refs/heads/${name}`)
+  if (branch === undefined) {
     throw new Error(`Unable to create branch: ${name}`)
   }
-  await checkoutBranch(repository, null, branch)
+  await checkoutBranch(repository, branch, null)
 }
 
 describe('git/reflog', () => {
@@ -51,7 +53,6 @@ describe('git/reflog', () => {
       await renameBranch(repository, currentBranch!, 'branch-2-test')
 
       const branches = await getRecentBranches(repository, 10)
-      expect(branches).not.toContain('master')
       expect(branches).not.toContain('branch-2')
       expect(branches).toContain('branch-1')
       expect(branches).toContain('branch-2-test')
@@ -70,32 +71,42 @@ describe('git/reflog', () => {
     })
   })
 
-  describe('getCheckoutsAfterDate', () => {
+  describe('getBranchCheckouts', () => {
     it('returns does not return the branches that were checked out before a specific date', async () => {
-      await createAndCheckout(repository!, 'branch-1')
-      await createAndCheckout(repository!, 'branch-2')
+      await createAndCheckout(repository, 'branch-1')
+      await createAndCheckout(repository, 'branch-2')
 
-      const branches = await getCheckoutsAfterDate(
-        repository!,
-        moment()
-          .add(1, 'day')
-          .toDate()
+      const branches = await getBranchCheckouts(
+        repository,
+        new Date(offsetFromNow(1, 'day'))
       )
       expect(branches.size).toBe(0)
     })
 
     it('returns all branches checked out after a specific date', async () => {
-      await createBranch(repository!, 'never-checked-out', null)
-      await createAndCheckout(repository!, 'branch-1')
-      await createAndCheckout(repository!, 'branch-2')
+      await createBranch(repository, 'never-checked-out', null)
+      await createAndCheckout(repository, 'branch-1')
+      await createAndCheckout(repository, 'branch-2')
 
-      const branches = await getCheckoutsAfterDate(
-        repository!,
-        moment()
-          .subtract(1, 'hour')
-          .toDate()
+      const branches = await getBranchCheckouts(
+        repository,
+        new Date(offsetFromNow(-1, 'hour'))
       )
       expect(branches.size).toBe(2)
+    })
+
+    it('returns empty when current branch is orphaned', async () => {
+      const result = await exec(
+        ['checkout', '--orphan', 'orphan-branch'],
+        repository.path
+      )
+      expect(result.exitCode).toBe(0)
+
+      const branches = await getBranchCheckouts(
+        repository,
+        new Date(offsetFromNow(-1, 'hour'))
+      )
+      expect(branches.size).toBe(0)
     })
   })
 })

@@ -1,7 +1,7 @@
 import * as common from './webpack.common'
 
 import * as webpack from 'webpack'
-import * as merge from 'webpack-merge'
+import merge from 'webpack-merge'
 
 const config: webpack.Configuration = {
   mode: 'development',
@@ -9,20 +9,11 @@ const config: webpack.Configuration = {
 }
 
 const mainConfig = merge({}, common.main, config)
-const askPassConfig = merge({}, common.askPass, config)
 const cliConfig = merge({}, common.cli, config)
 const highlighterConfig = merge({}, common.highlighter, config)
 
-// TODO:
-// if we have a PORT environment variable set and running `yarn start` we also
-// need to update this script to use the same port when building because this
-// is currently hard-coded.
-
-const webpackHotModuleReloadUrl =
-  'webpack-hot-middleware/client?path=http://localhost:3000/__webpack_hmr'
-
 const getRendererEntryPoint = () => {
-  const entry = common.renderer.entry as webpack.Entry
+  const entry = common.renderer.entry as webpack.EntryObject
   if (entry == null) {
     throw new Error(
       `Unable to resolve entry point. Check webpack.common.ts and try again`
@@ -32,12 +23,29 @@ const getRendererEntryPoint = () => {
   return entry.renderer as string
 }
 
+const getPortOrDefault = () => {
+  const port = process.env.PORT
+  if (port != null) {
+    const result = parseInt(port)
+    if (isNaN(result)) {
+      throw new Error(`Unable to parse '${port}' into valid number`)
+    }
+    return result
+  }
+
+  return 3000
+}
+
+const port = getPortOrDefault()
+const webpackHotModuleReloadUrl = `webpack-hot-middleware/client?path=http://localhost:${port}/__webpack_hmr`
+const publicPath = `http://localhost:${port}/build/`
+
 const rendererConfig = merge({}, common.renderer, config, {
   entry: {
     renderer: [webpackHotModuleReloadUrl, getRendererEntryPoint()],
   },
   output: {
-    publicPath: 'http://localhost:3000/build/',
+    publicPath,
   },
   module: {
     rules: [
@@ -46,9 +54,16 @@ const rendererConfig = merge({}, common.renderer, config, {
       // as a blob:// uri at runtime.
       {
         test: /\.(scss|css)$/,
-        use: ['style-loader', 'css-loader?sourceMap', 'sass-loader?sourceMap'],
+        use: [
+          'style-loader',
+          { loader: 'css-loader', options: { sourceMap: true } },
+          { loader: 'sass-loader', options: { sourceMap: true } },
+        ],
       },
     ],
+  },
+  infrastructureLogging: {
+    level: 'error',
   },
   plugins: [new webpack.HotModuleReplacementPlugin()],
 })
@@ -61,16 +76,20 @@ const crashConfig = merge({}, common.crash, config, {
       // as a blob:// uri at runtime.
       {
         test: /\.(scss|css)$/,
-        use: ['style-loader', 'css-loader?sourceMap', 'sass-loader?sourceMap'],
+        use: [
+          'style-loader',
+          { loader: 'css-loader', options: { sourceMap: true } },
+          { loader: 'sass-loader', options: { sourceMap: true } },
+        ],
       },
     ],
   },
 })
 
-export = [
+// eslint-disable-next-line no-restricted-syntax
+export default [
   mainConfig,
   rendererConfig,
-  askPassConfig,
   crashConfig,
   cliConfig,
   highlighterConfig,

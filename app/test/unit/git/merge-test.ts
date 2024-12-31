@@ -3,13 +3,14 @@ import {
   getMergeBase,
   getBranches,
   merge,
+  MergeResult,
 } from '../../../src/lib/git'
 import {
   setupEmptyRepository,
   setupFixtureRepository,
   setupConflictedRepo,
 } from '../../helpers/repositories'
-import { GitProcess } from 'dugite'
+import { exec } from 'dugite'
 import { Repository } from '../../../src/models/repository'
 
 describe('git/merge', () => {
@@ -20,8 +21,8 @@ describe('git/merge', () => {
         const path = await setupFixtureRepository('merge-base-test')
         repository = new Repository(path, -1, null, false)
       })
-      it('returns true', async () => {
-        expect(await merge(repository, 'dev')).toBe(true)
+      it('returns MergeResult.Success', async () => {
+        expect(await merge(repository, 'dev')).toBe(MergeResult.Success)
       })
     })
     describe('and is a noop', () => {
@@ -31,8 +32,8 @@ describe('git/merge', () => {
         repository = new Repository(path, -1, null, false)
         await merge(repository, 'dev')
       })
-      it('returns false', async () => {
-        expect(await merge(repository, 'dev')).toBe(false)
+      it('returns MergeResult.AlreadyUpToDate', async () => {
+        expect(await merge(repository, 'dev')).toBe(MergeResult.AlreadyUpToDate)
       })
     })
   })
@@ -64,19 +65,16 @@ describe('git/merge', () => {
       const secondBranch = 'gh-pages'
 
       // create the first commit
-      await GitProcess.exec(
+      await exec(
         ['commit', '--allow-empty', '-m', `first commit on master`],
         repository.path
       )
 
       // create a second branch that's orphaned from our current branch
-      await GitProcess.exec(
-        ['checkout', '--orphan', secondBranch],
-        repository.path
-      )
+      await exec(['checkout', '--orphan', secondBranch], repository.path)
 
       // add a commit to this new branch
-      await GitProcess.exec(
+      await exec(
         ['commit', '--allow-empty', '-m', `first commit on gh-pages`],
         repository.path
       )
@@ -100,7 +98,7 @@ describe('git/merge', () => {
       const repository = await setupEmptyRepository()
 
       // create the first commit
-      await GitProcess.exec(
+      await exec(
         ['commit', '--allow-empty', '-m', `first commit on master`],
         repository.path
       )

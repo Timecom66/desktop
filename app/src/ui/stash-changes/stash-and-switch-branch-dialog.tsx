@@ -5,16 +5,18 @@ import { Dispatcher } from '../dispatcher'
 import { VerticalSegmentedControl } from '../lib/vertical-segmented-control'
 import { Row } from '../lib/row'
 import { Branch } from '../../models/branch'
-import { ButtonGroup } from '../lib/button-group'
-import { Button } from '../lib/button'
 import { UncommittedChangesStrategy } from '../../models/uncommitted-changes-strategy'
-import { Octicon, OcticonSymbol } from '../octicons'
+import { Octicon } from '../octicons'
+import * as octicons from '../octicons/octicons.generated'
 import { PopupType } from '../../models/popup'
+import { startTimer } from '../lib/timing'
+import { OkCancelButtonGroup } from '../dialog/ok-cancel-button-group'
 
 enum StashAction {
   StashOnCurrentBranch,
   MoveToNewBranch,
 }
+
 interface ISwitchBranchProps {
   readonly repository: Repository
   readonly dispatcher: Dispatcher
@@ -31,6 +33,7 @@ interface ISwitchBranchProps {
 interface ISwitchBranchState {
   readonly isStashingChanges: boolean
   readonly selectedStashAction: StashAction
+  readonly currentBranchName: string
 }
 
 /**
@@ -47,6 +50,7 @@ export class StashAndSwitchBranch extends React.Component<
     this.state = {
       isStashingChanges: false,
       selectedStashAction: StashAction.StashOnCurrentBranch,
+      currentBranchName: props.currentBranch.name,
     }
   }
 
@@ -66,12 +70,9 @@ export class StashAndSwitchBranch extends React.Component<
           {this.renderStashOverwriteWarning()}
         </DialogContent>
         <DialogFooter>
-          <ButtonGroup>
-            <Button type="submit">
-              {__DARWIN__ ? 'Switch Branch' : 'Switch branch'}
-            </Button>
-            <Button onClick={this.props.onDismissed}>Cancel</Button>
-          </ButtonGroup>
+          <OkCancelButtonGroup
+            okButtonText={__DARWIN__ ? 'Switch Branch' : 'Switch branch'}
+          />
         </DialogFooter>
       </Dialog>
     )
@@ -87,7 +88,7 @@ export class StashAndSwitchBranch extends React.Component<
 
     return (
       <Row>
-        <Octicon symbol={OcticonSymbol.alert} /> Your current stash will be
+        <Octicon symbol={octicons.alert} /> Your current stash will be
         overwritten by creating a new stash
       </Row>
     )
@@ -97,22 +98,24 @@ export class StashAndSwitchBranch extends React.Component<
     const { branchToCheckout } = this.props
     const items = [
       {
-        title: `Yes, stash my changes from ${this.props.currentBranch.name}`,
-        description: 'Stash your in-progress work and return to it later',
+        title: `Leave my changes on ${this.state.currentBranchName}`,
+        description:
+          'Your in-progress work will be stashed on this branch for you to return to later',
+        key: StashAction.StashOnCurrentBranch,
       },
       {
-        title: `No, bring my changes to ${branchToCheckout.name}`,
-        description:
-          'Your in-progress work will automatically follow you to the new branch',
+        title: `Bring my changes to ${branchToCheckout.name}`,
+        description: 'Your in-progress work will follow you to the new branch',
+        key: StashAction.MoveToNewBranch,
       },
     ]
 
     return (
       <Row>
         <VerticalSegmentedControl
-          label="Do you want to stash your changes?"
+          label="You have changes on this branch. What would you like to do with them?"
           items={items}
-          selectedIndex={this.state.selectedStashAction}
+          selectedKey={this.state.selectedStashAction}
           onSelectionChanged={this.onSelectionChanged}
         />
       </Row>
@@ -124,15 +127,12 @@ export class StashAndSwitchBranch extends React.Component<
   }
 
   private onSubmit = async () => {
-    const {
-      repository,
-      dispatcher,
-      hasAssociatedStash,
-      branchToCheckout,
-    } = this.props
+    const { repository, branchToCheckout, dispatcher, hasAssociatedStash } =
+      this.props
+    const { selectedStashAction } = this.state
 
     if (
-      this.state.selectedStashAction === StashAction.StashOnCurrentBranch &&
+      selectedStashAction === StashAction.StashOnCurrentBranch &&
       hasAssociatedStash
     ) {
       dispatcher.showPopup({
@@ -145,31 +145,27 @@ export class StashAndSwitchBranch extends React.Component<
 
     this.setState({ isStashingChanges: true })
 
+    const timer = startTimer('stash and checkout', repository)
     try {
-      await this.stashAndCheckout()
+      if (selectedStashAction === StashAction.StashOnCurrentBranch) {
+        await dispatcher.checkoutBranch(
+          repository,
+          branchToCheckout,
+          UncommittedChangesStrategy.StashOnCurrentBranch
+        )
+      } else if (selectedStashAction === StashAction.MoveToNewBranch) {
+        // attempt to checkout the branch without creating a stash entry
+        await dispatcher.checkoutBranch(
+          repository,
+          branchToCheckout,
+          UncommittedChangesStrategy.MoveToNewBranch
+        )
+      }
     } finally {
-      this.setState({ isStashingChanges: false })
-    }
-
-    this.props.onDismissed()
-  }
-
-  private async stashAndCheckout() {
-    const { repository, branchToCheckout, dispatcher } = this.props
-    const { selectedStashAction } = this.state
-
-    if (selectedStashAction === StashAction.StashOnCurrentBranch) {
-      await dispatcher.checkoutBranch(
-        repository,
-        branchToCheckout,
-        UncommittedChangesStrategy.stashOnCurrentBranch
-      )
-    } else if (selectedStashAction === StashAction.MoveToNewBranch) {
-      await dispatcher.checkoutBranch(
-        repository,
-        branchToCheckout,
-        UncommittedChangesStrategy.moveToNewBranch
-      )
+      timer.done()
+      this.setState({ isStashingChanges: false }, () => {
+        this.props.onDismissed()
+      })
     }
   }
 }

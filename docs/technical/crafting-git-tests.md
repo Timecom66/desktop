@@ -66,7 +66,7 @@ to declaratively get the repository into a state for testing. This approach is
 ideal for situations when:
 
  - a baseline repository can differ slightly between tests, and it's easier to
-   programatically apply the changes than create multiple test fixtures
+   programmatically apply the changes than create multiple test fixtures
  - the workflows being developed may change over time, and the tests themselves
    should be flexible (and be easy to identify how they evolve)
 
@@ -162,11 +162,11 @@ it('returns remotes sorted alphabetically', async () => {
   // adding these remotes out-of-order to test how they are then retrieved
   const url = 'https://github.com/desktop/not-found.git'
 
-  await GitProcess.exec(['remote', 'add', 'X', url], repository.path)
-  await GitProcess.exec(['remote', 'add', 'A', url], repository.path)
-  await GitProcess.exec(['remote', 'add', 'L', url], repository.path)
-  await GitProcess.exec(['remote', 'add', 'T', url], repository.path)
-  await GitProcess.exec(['remote', 'add', 'D', url], repository.path)
+  await exec(['remote', 'add', 'X', url], repository.path)
+  await exec(['remote', 'add', 'A', url], repository.path)
+  await exec(['remote', 'add', 'L', url], repository.path)
+  await exec(['remote', 'add', 'T', url], repository.path)
+  await exec(['remote', 'add', 'D', url], repository.path)
 
   const result = await getRemotes(repository)
   expect(result).toHaveLength(5)

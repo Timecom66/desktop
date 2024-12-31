@@ -1,5 +1,8 @@
 export enum UncommittedChangesStrategy {
-  askForConfirmation,
-  stashOnCurrentBranch,
-  moveToNewBranch,
+  AskForConfirmation = 'AskForConfirmation',
+  StashOnCurrentBranch = 'StashOnCurrentBranch',
+  MoveToNewBranch = 'MoveToNewBranch',
 }
+
+export const defaultUncommittedChangesStrategy: UncommittedChangesStrategy =
+  UncommittedChangesStrategy.AskForConfirmation

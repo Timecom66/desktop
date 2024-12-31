@@ -3,8 +3,6 @@ import { PublishRepository } from './publish-repository'
 import { Dispatcher } from '../dispatcher'
 import { Account } from '../../models/account'
 import { Repository } from '../../models/repository'
-import { ButtonGroup } from '../lib/button-group'
-import { Button } from '../lib/button'
 import { Dialog, DialogFooter, DialogContent, DialogError } from '../dialog'
 import { TabBar } from '../tab-bar'
 import { getDotComAPIEndpoint } from '../../lib/api'
@@ -17,6 +15,7 @@ import {
   RepositoryPublicationSettings,
   PublishSettingsType,
 } from '../../models/publish-settings'
+import { OkCancelButtonGroup } from '../dialog/ok-cancel-button-group'
 
 enum PublishTab {
   DotCom = 0,
@@ -140,16 +139,23 @@ export class Publish extends React.Component<IPublishProps, IPublishState> {
           onTabClicked={this.onTabClicked}
           selectedIndex={this.state.currentTab}
         >
-          <span>GitHub.com</span>
-          <span>Enterprise</span>
+          <span id="dotcom-tab">GitHub.com</span>
+          <span id="enterprise-tab">GitHub Enterprise</span>
         </TabBar>
 
         {currentTabState.error ? (
           <DialogError>{currentTabState.error.message}</DialogError>
         ) : null}
 
-        {this.renderContent()}
-        {this.renderFooter()}
+        <div
+          role="tabpanel"
+          aria-labelledby={
+            currentTabState.kind === 'dotcom' ? 'dotcom-tab' : 'enterprise-tab'
+          }
+        >
+          {this.renderContent()}
+          {this.renderFooter()}
+        </div>
       </Dialog>
     )
   }
@@ -236,8 +242,8 @@ export class Publish extends React.Component<IPublishProps, IPublishState> {
             onAction={this.signInEnterprise}
           >
             <div>
-              If you have a GitHub Enterprise account at work, sign in to it to
-              get access to your repositories.
+              If you are using GitHub Enterprise at work, sign in to it to get
+              access to your repositories.
             </div>
           </CallToAction>
         )
@@ -254,12 +260,12 @@ export class Publish extends React.Component<IPublishProps, IPublishState> {
     if (user) {
       return (
         <DialogFooter>
-          <ButtonGroup>
-            <Button type="submit" disabled={disabled}>
-              {__DARWIN__ ? 'Publish Repository' : 'Publish repository'}
-            </Button>
-            <Button onClick={this.props.onDismissed}>Cancel</Button>
-          </ButtonGroup>
+          <OkCancelButtonGroup
+            okButtonText={
+              __DARWIN__ ? 'Publish Repository' : 'Publish repository'
+            }
+            okButtonDisabled={disabled}
+          />
         </DialogFooter>
       )
     } else {
@@ -285,7 +291,6 @@ export class Publish extends React.Component<IPublishProps, IPublishState> {
     const account = this.getAccountForTab(tab)
     if (!account) {
       fatalError(`Tried to publish with no user. That seems impossible!`)
-      return
     }
 
     const settings = currentTabState.settings

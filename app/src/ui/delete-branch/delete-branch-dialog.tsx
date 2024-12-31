@@ -3,11 +3,10 @@ import * as React from 'react'
 import { Dispatcher } from '../dispatcher'
 import { Repository } from '../../models/repository'
 import { Branch } from '../../models/branch'
-import { Button } from '../lib/button'
-import { ButtonGroup } from '../lib/button-group'
 import { Checkbox, CheckboxValue } from '../lib/checkbox'
 import { Dialog, DialogContent, DialogFooter } from '../dialog'
 import { Ref } from '../lib/ref'
+import { OkCancelButtonGroup } from '../dialog/ok-cancel-button-group'
 
 interface IDeleteBranchProps {
   readonly dispatcher: Dispatcher
@@ -42,33 +41,35 @@ export class DeleteBranch extends React.Component<
         id="delete-branch"
         title={__DARWIN__ ? 'Delete Branch' : 'Delete branch'}
         type="warning"
+        onSubmit={this.deleteBranch}
         onDismissed={this.props.onDismissed}
         disabled={this.state.isDeleting}
         loading={this.state.isDeleting}
+        role="alertdialog"
+        ariaDescribedBy="delete-branch-confirmation-message delete-branch-confirmation-message-remote"
       >
         <DialogContent>
-          <p>
-            Delete branch <Ref>{this.props.branch.name}</Ref>?<br />
-            This action cannot be undone.
-          </p>
+          <div id="delete-branch-confirmation-message">
+            <p>
+              Delete branch <Ref>{this.props.branch.name}</Ref>?
+            </p>
+            <p>This action cannot be undone.</p>
 
-          {this.renderDeleteOnRemote()}
+            {this.renderDeleteOnRemote()}
+          </div>
         </DialogContent>
         <DialogFooter>
-          <ButtonGroup destructive={true}>
-            <Button type="submit">Cancel</Button>
-            <Button onClick={this.deleteBranch}>Delete</Button>
-          </ButtonGroup>
+          <OkCancelButtonGroup destructive={true} okButtonText="Delete" />
         </DialogFooter>
       </Dialog>
     )
   }
 
   private renderDeleteOnRemote() {
-    if (this.props.branch.remote && this.props.existsOnRemote) {
+    if (this.props.branch.upstreamRemoteName && this.props.existsOnRemote) {
       return (
         <div>
-          <p>
+          <p id="delete-branch-confirmation-message-remote">
             <strong>
               The branch also exists on the remote, do you wish to delete it
               there as well?
@@ -103,13 +104,13 @@ export class DeleteBranch extends React.Component<
 
     this.setState({ isDeleting: true })
 
-    await dispatcher.deleteBranch(
+    await dispatcher.deleteLocalBranch(
       repository,
       branch,
       this.state.includeRemoteBranch
     )
     this.props.onDeleted(repository)
 
-    await dispatcher.closePopup()
+    this.props.onDismissed()
   }
 }

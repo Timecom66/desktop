@@ -1,7 +1,9 @@
 import { git } from './core'
 import { Repository } from '../../models/repository'
 
-/** Get the `limit` most recently checked out branches. */
+/**
+ * Get the `limit` most recently checked out branches.
+ */
 export async function getRecentBranches(
   repository: Repository,
   limit: number
@@ -36,8 +38,7 @@ export async function getRecentBranches(
 
   const lines = result.stdout.split('\n')
   const names = new Set<string>()
-  // exclude master from recent branches
-  const excludedNames = new Set<String>(['master'])
+  const excludedNames = new Set<String>()
 
   for (const line of lines) {
     const result = regex.exec(line)
@@ -64,15 +65,19 @@ export async function getRecentBranches(
   return [...names]
 }
 
+const noCommitsOnBranchRe = new RegExp(
+  "fatal: your current branch '.*' does not have any commits yet"
+)
+
 /**
  * Gets the distinct list of branches that have been checked out after a specific date
  * Returns a map keyed on branch names
  *
  * @param repository the repository who's reflog you want to check
- * @param afterDate the minimum date a checkout has to occur
+ * @param afterDate filters checkouts so that only those occurring on or after this date are returned
  * @returns map of branch name -> checkout date
  */
-export async function getCheckoutsAfterDate(
+export async function getBranchCheckouts(
   repository: Repository,
   afterDate: Date
 ): Promise<Map<string, Date>> {
@@ -80,7 +85,7 @@ export async function getCheckoutsAfterDate(
   const regex = new RegExp(
     /^[a-z0-9]{40}\sHEAD@{(.*)}\scheckout: moving from\s.*\sto\s(.*)$/
   )
-  const gitOutput = await git(
+  const result = await git(
     [
       'reflog',
       '--date=iso',
@@ -90,10 +95,21 @@ export async function getCheckoutsAfterDate(
       '--',
     ],
     repository.path,
-    'getCheckoutsAfterDate'
+    'getCheckoutsAfterDate',
+    { successExitCodes: new Set([0, 128]) }
   )
+
   const checkouts = new Map<string, Date>()
-  const lines = gitOutput.stdout.split('\n')
+
+  // edge case where orphaned branch is created but Git raises error when
+  // reading the reflog on this new branch as it has no commits
+  //
+  // see https://github.com/desktop/desktop/issues/7983 for more information
+  if (result.exitCode === 128 && noCommitsOnBranchRe.test(result.stderr)) {
+    return checkouts
+  }
+
+  const lines = result.stdout.split('\n')
   for (const line of lines) {
     const parsedLine = regex.exec(line)
 

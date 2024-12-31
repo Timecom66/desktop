@@ -1,10 +1,13 @@
 import * as React from 'react'
-import { clipboard } from 'electron'
 
 import { Row } from '../lib/row'
 import { Button } from '../lib/button'
-import { ButtonGroup } from '../lib/button-group'
-import { Dialog, DialogError, DialogContent, DialogFooter } from '../dialog'
+import {
+  Dialog,
+  DialogError,
+  DialogContent,
+  DefaultDialogFooter,
+} from '../dialog'
 import { LinkButton } from '../lib/link-button'
 import { updateStore, IUpdateState, UpdateStatus } from '../lib/update-store'
 import { Disposable } from 'event-kit'
@@ -13,13 +16,17 @@ import { RelativeTime } from '../relative-time'
 import { assertNever } from '../../lib/fatal-error'
 import { ReleaseNotesUri } from '../lib/releases'
 import { encodePathAsUrl } from '../../lib/path'
+import { isOSNoLongerSupportedByElectron } from '../../lib/get-os'
 
-const DesktopLogo = encodePathAsUrl(__dirname, 'static/logo-64x64@2x.png')
+const logoPath = __DARWIN__
+  ? 'static/logo-64x64@2x.png'
+  : 'static/windows-logo-64x64@2x.png'
+const DesktopLogo = encodePathAsUrl(__dirname, logoPath)
 
 interface IAboutProps {
   /**
    * Event triggered when the dialog is dismissed by the user in the
-   * ways described in the Dialog component's dismissable prop.
+   * ways described in the Dialog component's dismissible prop.
    */
   readonly onDismissed: () => void
 
@@ -33,8 +40,13 @@ interface IAboutProps {
    */
   readonly applicationVersion: string
 
-  /** A function to call to kick off an update check. */
-  readonly onCheckForUpdates: () => void
+  /**
+   * The currently installed (and running) architecture of the app.
+   */
+  readonly applicationArchitecture: string
+
+  /** A function to call to kick off a non-staggered update check. */
+  readonly onCheckForNonStaggeredUpdates: () => void
 
   readonly onShowAcknowledgements: () => void
 
@@ -51,7 +63,6 @@ interface IAboutState {
  * running application such as name and version.
  */
 export class About extends React.Component<IAboutProps, IAboutState> {
-  private closeButton: Button | null = null
   private updateStoreEventHandle: Disposable | null = null
 
   public constructor(props: IAboutProps) {
@@ -62,16 +73,8 @@ export class About extends React.Component<IAboutProps, IAboutState> {
     }
   }
 
-  private onCloseButtonRef = (button: Button | null) => {
-    this.closeButton = button
-  }
-
   private onUpdateStateChanged = (updateState: IUpdateState) => {
     this.setState({ updateState })
-  }
-
-  private onClickVersion = () => {
-    clipboard.writeText(this.props.applicationVersion)
   }
 
   public componentDidMount() {
@@ -79,15 +82,6 @@ export class About extends React.Component<IAboutProps, IAboutState> {
       this.onUpdateStateChanged
     )
     this.setState({ updateState: updateStore.state })
-
-    // A modal dialog autofocuses the first element that can receive
-    // focus (and our dialog even uses the autofocus attribute on its
-    // fieldset). In our case that's the release notes link button and
-    // we don't want that to have focus so we'll move it over to the
-    // close button instead.
-    if (this.closeButton) {
-      this.closeButton.focus()
-    }
   }
 
   public componentWillUnmount() {
@@ -102,10 +96,7 @@ export class About extends React.Component<IAboutProps, IAboutState> {
   }
 
   private renderUpdateButton() {
-    if (
-      __RELEASE_CHANNEL__ === 'development' ||
-      __RELEASE_CHANNEL__ === 'test'
-    ) {
+    if (__RELEASE_CHANNEL__ === 'development') {
       return null
     }
 
@@ -123,12 +114,22 @@ export class About extends React.Component<IAboutProps, IAboutState> {
       case UpdateStatus.UpdateNotAvailable:
       case UpdateStatus.CheckingForUpdates:
       case UpdateStatus.UpdateAvailable:
-        const disabled = updateStatus !== UpdateStatus.UpdateNotAvailable
+      case UpdateStatus.UpdateNotChecked:
+        const disabled =
+          ![
+            UpdateStatus.UpdateNotChecked,
+            UpdateStatus.UpdateNotAvailable,
+          ].includes(updateStatus) || isOSNoLongerSupportedByElectron()
+
+        const buttonTitle = 'Check for Updates'
 
         return (
           <Row>
-            <Button disabled={disabled} onClick={this.props.onCheckForUpdates}>
-              Check for Updates
+            <Button
+              disabled={disabled}
+              onClick={this.props.onCheckForNonStaggeredUpdates}
+            >
+              {buttonTitle}
             </Button>
           </Row>
         )
@@ -187,14 +188,11 @@ export class About extends React.Component<IAboutProps, IAboutState> {
       return null
     }
 
-    if (
-      __RELEASE_CHANNEL__ === 'development' ||
-      __RELEASE_CHANNEL__ === 'test'
-    ) {
+    if (__RELEASE_CHANNEL__ === 'development') {
       return (
         <p>
-          The application is currently running in development or test mode and
-          will not receive any updates.
+          The application is currently running in development and will not
+          receive any updates.
         </p>
       )
     }
@@ -210,6 +208,8 @@ export class About extends React.Component<IAboutProps, IAboutState> {
         return this.renderUpdateNotAvailable()
       case UpdateStatus.UpdateReady:
         return this.renderUpdateReady()
+      case UpdateStatus.UpdateNotChecked:
+        return null
       default:
         return assertNever(
           updateState.status,
@@ -223,11 +223,20 @@ export class About extends React.Component<IAboutProps, IAboutState> {
       return null
     }
 
-    if (
-      __RELEASE_CHANNEL__ === 'development' ||
-      __RELEASE_CHANNEL__ === 'test'
-    ) {
+    if (__RELEASE_CHANNEL__ === 'development') {
       return null
+    }
+
+    if (isOSNoLongerSupportedByElectron()) {
+      return (
+        <DialogError>
+          This operating system is no longer supported. Software updates have
+          been disabled.{' '}
+          <LinkButton uri="https://docs.github.com/en/desktop/installing-and-configuring-github-desktop/overview/supported-operating-systems">
+            Supported operating systems
+          </LinkButton>
+        </DialogError>
+      )
     }
 
     if (!this.state.updateState.lastSuccessfulCheck) {
@@ -243,6 +252,24 @@ export class About extends React.Component<IAboutProps, IAboutState> {
     return null
   }
 
+  private renderBetaLink() {
+    if (__RELEASE_CHANNEL__ === 'beta') {
+      return
+    }
+
+    return (
+      <div>
+        <p className="no-padding">Looking for the latest features?</p>
+        <p className="no-padding">
+          Check out the{' '}
+          <LinkButton uri="https://desktop.github.com/beta">
+            Beta Channel
+          </LinkButton>
+        </p>
+      </div>
+    )
+  }
+
   public render() {
     const name = this.props.applicationName
     const version = this.props.applicationVersion
@@ -251,10 +278,12 @@ export class About extends React.Component<IAboutProps, IAboutState> {
     )
 
     const versionText = __DEV__ ? `Build ${version}` : `Version ${version}`
+    const titleId = 'Dialog_about'
 
     return (
       <Dialog
         id="about"
+        titleId={titleId}
         onSubmit={this.props.onDismissed}
         onDismissed={this.props.onDismissed}
       >
@@ -268,41 +297,28 @@ export class About extends React.Component<IAboutProps, IAboutState> {
               height="64"
             />
           </Row>
-          <h2>{name}</h2>
+          <h1 id={titleId}>About {name}</h1>
           <p className="no-padding">
-            <LinkButton
-              title="Click to copy"
-              className="version-text"
-              onClick={this.onClickVersion}
-            >
-              {versionText}
-            </LinkButton>{' '}
+            <span className="selectable-text">
+              {versionText} ({this.props.applicationArchitecture})
+            </span>{' '}
             ({releaseNotesLink})
           </p>
-          <p className="no-padding">
+          <p className="no-padding terms-and-license">
             <LinkButton onClick={this.props.onShowTermsAndConditions}>
               Terms and Conditions
             </LinkButton>
           </p>
-          <p>
+          <p className="terms-and-license">
             <LinkButton onClick={this.props.onShowAcknowledgements}>
               License and Open Source Notices
             </LinkButton>
           </p>
           {this.renderUpdateDetails()}
           {this.renderUpdateButton()}
+          {this.renderBetaLink()}
         </DialogContent>
-
-        <DialogFooter>
-          <ButtonGroup>
-            <Button
-              ref={this.onCloseButtonRef}
-              onClick={this.props.onDismissed}
-            >
-              Close
-            </Button>
-          </ButtonGroup>
-        </DialogFooter>
+        <DefaultDialogFooter />
       </Dialog>
     )
   }

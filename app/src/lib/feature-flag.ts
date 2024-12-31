@@ -22,23 +22,25 @@ function enableDevelopmentFeatures(): boolean {
 }
 
 /** Should the app enable beta features? */
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
 //@ts-ignore: this will be used again in the future
 function enableBetaFeatures(): boolean {
   return enableDevelopmentFeatures() || __RELEASE_CHANNEL__ === 'beta'
 }
 
-/** Should merge tool integration be enabled? */
-export function enableMergeTool(): boolean {
-  return enableDevelopmentFeatures()
-}
+/**
+ * Should the app show menu items that are used for testing various parts of the
+ * UI
+ *
+ * For our own testing purposes, this will likely remain enabled. But, sometimes
+ * we may want to create a test release for a user to test a fix in which case
+ * they should not need access to the test menu items.
+ */
+export const enableTestMenuItems = () =>
+  enableDevelopmentFeatures() || __RELEASE_CHANNEL__ === 'test'
 
 /** Should git pass `--recurse-submodules` when performing operations? */
 export function enableRecurseSubmodulesFlag(): boolean {
-  return enableBetaFeatures()
-}
-
-/** Should the app set protocol.version=2 for any fetch/push/pull/clone operation? */
-export function enableGitProtocolVersionTwo(): boolean {
   return true
 }
 
@@ -46,42 +48,58 @@ export function enableReadmeOverwriteWarning(): boolean {
   return enableBetaFeatures()
 }
 
-/** Shoult the app automatically prune branches that are no longer actively being used */
-export function enableBranchPruning(): boolean {
+/** Should the app detect Windows Subsystem for Linux as a valid shell? */
+export function enableWSLDetection(): boolean {
   return enableBetaFeatures()
 }
 
 /**
- * Whether or not to activate the "Create PR" blankslate action.
- *
- * The state of the feature as of writing this is that the underlying
- * data source required to power this feature is not reliable enough
- * and needs looking at so we aren't ready to move this to production
- * just yet.
+ * Should we allow reporting unhandled rejections as if they were crashes?
  */
-export function enableNoChangesCreatePRBlankslateAction(): boolean {
+export function enableUnhandledRejectionReporting(): boolean {
   return enableBetaFeatures()
 }
 
-/** Should the app detect and handle rebase conflicts when `pull.rebase` is set? */
-export function enablePullWithRebase(): boolean {
+/**
+ * Should we allow x64 apps running under ARM translation to auto-update to
+ * ARM64 builds?
+ */
+export function enableUpdateFromEmulatedX64ToARM64(): boolean {
+  if (__DARWIN__) {
+    return true
+  }
+
+  return enableBetaFeatures()
+}
+
+/** Should we allow resetting to a previous commit? */
+export function enableResetToCommit(): boolean {
   return true
 }
 
-/**
- *  Enables a new UI for the repository picker that supports
- *  grouping and filtering (GitHub) repositories by owner/organization.
- */
-export function enableGroupRepositoriesByOwner(): boolean {
+/** Should we allow checking out a single commit? */
+export function enableCheckoutCommit(): boolean {
+  return true
+}
+
+/** Should we show previous tags as suggestions? */
+export function enablePreviousTagSuggestions(): boolean {
   return enableBetaFeatures()
 }
 
-/** Should the app show the "rebase current branch" dialog? */
-export function enableRebaseDialog(): boolean {
+/** Should we show a pull-requests quick view? */
+export function enablePullRequestQuickView(): boolean {
+  return enableDevelopmentFeatures()
+}
+
+/** Should we support image previews for dds files? */
+export function enableImagePreviewsForDDSFiles(): boolean {
   return enableBetaFeatures()
 }
 
-/** Should the app show the "stash changes" dialog? */
-export function enableStashing(): boolean {
-  return enableBetaFeatures()
-}
+export const enableCustomIntegration = () => true
+
+export const enableResizingToolbarButtons = () => true
+export const enableGitConfigParameters = enableBetaFeatures
+
+export const enableFilteredChangesList = enableDevelopmentFeatures

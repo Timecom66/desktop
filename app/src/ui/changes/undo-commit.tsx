@@ -4,6 +4,7 @@ import { Commit } from '../../models/commit'
 import { RichText } from '../lib/rich-text'
 import { RelativeTime } from '../relative-time'
 import { Button } from '../lib/button'
+import { Emoji } from '../../lib/emoji'
 
 interface IUndoCommitProps {
   /** The function to call when the Undo button is clicked. */
@@ -13,16 +14,20 @@ interface IUndoCommitProps {
   readonly commit: Commit
 
   /** The emoji cache to use when rendering the commit message */
-  readonly emoji: Map<string, string>
+  readonly emoji: Map<string, Emoji>
 
   /** whether a push, pull or fetch is in progress */
   readonly isPushPullFetchInProgress: boolean
+
+  /** whether a committing is in progress */
+  readonly isCommitting: boolean
 }
 
 /** The Undo Commit component. */
 export class UndoCommit extends React.Component<IUndoCommitProps, {}> {
   public render() {
-    const disabled = this.props.isPushPullFetchInProgress
+    const disabled =
+      this.props.isPushPullFetchInProgress || this.props.isCommitting
     const title = disabled
       ? 'Undo is disabled while the repository is being updated'
       : undefined
@@ -41,8 +46,13 @@ export class UndoCommit extends React.Component<IUndoCommitProps, {}> {
             renderUrlsAsLinks={false}
           />
         </div>
-        <div className="actions" title={title}>
-          <Button size="small" disabled={disabled} onClick={this.props.onUndo}>
+        <div className="actions">
+          <Button
+            size="small"
+            disabled={disabled}
+            onClick={this.props.onUndo}
+            tooltip={title}
+          >
             Undo
           </Button>
         </div>

@@ -7,7 +7,8 @@ import { CommitOneLine } from '../../models/commit'
 /**
  * Convert two refs into the Git range syntax representing the set of commits
  * that are reachable from `to` but excluding those that are reachable from
- * `from`.
+ * `from`. This will not be inclusive to the `from` ref, see
+ * `revRangeInclusive`.
  *
  * Each parameter can be the commit SHA or a ref name, or specify an empty
  * string to represent HEAD.
@@ -17,6 +18,21 @@ import { CommitOneLine } from '../../models/commit'
  */
 export function revRange(from: string, to: string) {
   return `${from}..${to}`
+}
+
+/**
+ * Convert two refs into the Git range syntax representing the set of commits
+ * that are reachable from `to` but excluding those that are reachable from
+ * `from`. However as opposed to `revRange`, this will also include `from` ref.
+ *
+ * Each parameter can be the commit SHA or a ref name, or specify an empty
+ * string to represent HEAD.
+ *
+ * @param from The start of the range
+ * @param to The end of the range
+ */
+export function revRangeInclusive(from: string, to: string) {
+  return `${from}^..${to}`
 }
 
 /**
@@ -96,17 +112,33 @@ export async function getBranchAheadBehind(
 /**
  * Get a list of commits from the target branch that do not exist on the base
  * branch, ordered how they will be applied to the base branch.
+ * Therefore, this will not include the baseBranchSha commit.
  *
  * This emulates how `git rebase` initially determines what will be applied to
  * the repository.
+ *
+ * Returns `null` when the rebase is not possible to perform, because of a
+ * missing commit ID
  */
-export async function getCommitsInRange(
+export async function getCommitsBetweenCommits(
   repository: Repository,
   baseBranchSha: string,
   targetBranchSha: string
-): Promise<ReadonlyArray<CommitOneLine>> {
+): Promise<ReadonlyArray<CommitOneLine> | null> {
   const range = revRange(baseBranchSha, targetBranchSha)
 
+  return getCommitsInRange(repository, range)
+}
+
+/**
+ * Get a list of commits inside the provided range.
+ *
+ * Returns `null` when it is not possible to perform because of a bad range.
+ */
+export async function getCommitsInRange(
+  repository: Repository,
+  range: string
+): Promise<ReadonlyArray<CommitOneLine> | null> {
   const args = [
     'rev-list',
     range,
@@ -118,7 +150,15 @@ export async function getCommitsInRange(
     '--',
   ]
 
-  const result = await git(args, repository.path, 'getCommitsInRange')
+  const options = {
+    expectedErrors: new Set<GitError>([GitError.BadRevision]),
+  }
+
+  const result = await git(args, repository.path, 'getCommitsInRange', options)
+
+  if (result.gitError === GitError.BadRevision) {
+    return null
+  }
 
   const lines = result.stdout.split('\n')
 
@@ -141,4 +181,21 @@ export async function getCommitsInRange(
   }
 
   return commits
+}
+
+/**
+ * Determine if merge commits exist in history after given commit
+ * If commitRef is null, goes back to HEAD of branch.
+ */
+export async function doMergeCommitsExistAfterCommit(
+  repository: Repository,
+  commitRef: string | null
+): Promise<boolean> {
+  const revision = commitRef === null ? 'HEAD' : revRange(commitRef, 'HEAD')
+  const args = ['rev-list', '-1', '--merges', revision, '--']
+
+  return git(args, repository.path, 'doMergeCommitsExistAfterCommit', {
+    // 128 here means there's no HEAD, i.e we're on an unborn branch
+    successExitCodes: new Set([0, 128]),
+  }).then(x => x.stdout.length > 0)
 }

@@ -1,4 +1,4 @@
-import { GitProcess } from 'dugite'
+import { exec } from 'dugite'
 import * as FSE from 'fs-extra'
 import * as Path from 'path'
 
@@ -9,7 +9,6 @@ import {
   rebase,
   RebaseResult,
 } from '../../../../src/lib/git/rebase'
-import { Commit } from '../../../../src/models/commit'
 import {
   AppFileStatusKind,
   CommittedFileChange,
@@ -17,6 +16,7 @@ import {
 import { createRepository } from '../../../helpers/repository-builder-rebase-test'
 import { getStatusOrThrow } from '../../../helpers/status'
 import { getBranchOrError } from '../../../helpers/git'
+import { IBranchTip } from '../../../../src/models/branch'
 
 const baseBranchName = 'base-branch'
 const featureBranchName = 'this-is-a-feature'
@@ -162,7 +162,7 @@ describe('git/rebase', () => {
   })
 
   describe('continue after resolving conflicts', () => {
-    let beforeRebaseTip: Commit
+    let beforeRebaseTip: IBranchTip
     let result: RebaseResult
     let status: IStatusResult
 
@@ -186,10 +186,7 @@ describe('git/rebase', () => {
 
       const { files } = afterRebase.workingDirectory
 
-      const diffCheckBefore = await GitProcess.exec(
-        ['diff', '--check'],
-        repository.path
-      )
+      const diffCheckBefore = await exec(['diff', '--check'], repository.path)
 
       expect(diffCheckBefore.exitCode).toBeGreaterThan(0)
 
@@ -204,10 +201,7 @@ describe('git/rebase', () => {
         '# HELLO WORLD! \nTHINGS GO HERE\nALSO FEATURE BRANCH UNDERWAY\n'
       )
 
-      const diffCheckAfter = await GitProcess.exec(
-        ['diff', '--check'],
-        repository.path
-      )
+      const diffCheckAfter = await exec(['diff', '--check'], repository.path)
 
       expect(diffCheckAfter.exitCode).toEqual(0)
 
@@ -238,7 +232,7 @@ describe('git/rebase', () => {
   })
 
   describe('continue with additional changes unrelated to conflicted files', () => {
-    let beforeRebaseTip: Commit
+    let beforeRebaseTip: IBranchTip
     let filesInRebasedCommit: ReadonlyArray<CommittedFileChange>
     let result: RebaseResult
     let status: IStatusResult
@@ -290,10 +284,12 @@ describe('git/rebase', () => {
 
       status = await getStatusOrThrow(repository)
 
-      filesInRebasedCommit = await getChangedFiles(
+      const changesetData = await getChangedFiles(
         repository,
         status.currentTip!
       )
+
+      filesInRebasedCommit = changesetData.files
     })
 
     it('returns success', () => {

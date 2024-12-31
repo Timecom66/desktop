@@ -18,12 +18,13 @@ import {
   setupConflictedRepoWithMultipleFiles,
 } from '../../helpers/repositories'
 
-import { GitProcess } from 'dugite'
+import { exec } from 'dugite'
 import {
   WorkingDirectoryFileChange,
   AppFileStatusKind,
   UnmergedEntrySummary,
   GitStatusEntry,
+  isManualConflict,
 } from '../../../src/models/status'
 import {
   DiffSelectionType,
@@ -32,7 +33,8 @@ import {
   DiffType,
 } from '../../../src/models/diff'
 import { getStatusOrThrow } from '../../helpers/status'
-import { ManualConflictResolutionKind } from '../../../src/models/manual-conflict-resolution'
+import { ManualConflictResolution } from '../../../src/models/manual-conflict-resolution'
+import { isConflictedFile } from '../../../src/lib/status'
 
 async function getTextDiff(
   repo: Repository,
@@ -44,7 +46,7 @@ async function getTextDiff(
 }
 
 describe('git/commit', () => {
-  let repository: Repository | null = null
+  let repository: Repository
 
   beforeEach(async () => {
     const testRepoPath = await setupFixtureRepository('test-repo')
@@ -53,35 +55,29 @@ describe('git/commit', () => {
 
   describe('createCommit normal', () => {
     it('commits the given files', async () => {
-      await FSE.writeFile(
-        path.join(repository!.path, 'README.md'),
-        'Hi world\n'
-      )
+      await FSE.writeFile(path.join(repository.path, 'README.md'), 'Hi world\n')
 
-      let status = await getStatusOrThrow(repository!)
+      let status = await getStatusOrThrow(repository)
       let files = status.workingDirectory.files
       expect(files.length).toEqual(1)
 
-      const sha = await createCommit(repository!, 'Special commit', files)
+      const sha = await createCommit(repository, 'Special commit', files)
       expect(sha).toHaveLength(7)
 
-      status = await getStatusOrThrow(repository!)
+      status = await getStatusOrThrow(repository)
       files = status.workingDirectory.files
       expect(files.length).toEqual(0)
 
-      const commits = await getCommits(repository!, 'HEAD', 100)
+      const commits = await getCommits(repository, 'HEAD', 100)
       expect(commits.length).toEqual(6)
       expect(commits[0].summary).toEqual('Special commit')
       expect(commits[0].sha.substring(0, 7)).toEqual(sha)
     })
 
     it('commit does not strip commentary by default', async () => {
-      await FSE.writeFile(
-        path.join(repository!.path, 'README.md'),
-        'Hi world\n'
-      )
+      await FSE.writeFile(path.join(repository.path, 'README.md'), 'Hi world\n')
 
-      const status = await getStatusOrThrow(repository!)
+      const status = await getStatusOrThrow(repository)
       const files = status.workingDirectory.files
       expect(files.length).toEqual(1)
 
@@ -89,10 +85,10 @@ describe('git/commit', () => {
 
 # this is a comment`
 
-      const sha = await createCommit(repository!, message, files)
+      const sha = await createCommit(repository, message, files)
       expect(sha).toHaveLength(7)
 
-      const commit = await getCommit(repository!, 'HEAD')
+      const commit = await getCommit(repository, 'HEAD')
       expect(commit).not.toBeNull()
       expect(commit!.summary).toEqual('Special commit')
       expect(commit!.body).toEqual('# this is a comment\n')
@@ -138,9 +134,9 @@ describe('git/commit', () => {
 
       await FSE.writeFile(path.join(repo.path, 'foo'), 'foo\n')
 
-      await GitProcess.exec(['add', 'foo'], repo.path)
-      await GitProcess.exec(['commit', '-m', 'Initial commit'], repo.path)
-      await GitProcess.exec(['mv', 'foo', 'bar'], repo.path)
+      await exec(['add', 'foo'], repo.path)
+      await exec(['commit', '-m', 'Initial commit'], repo.path)
+      await exec(['mv', 'foo', 'bar'], repo.path)
 
       const status = await getStatusOrThrow(repo)
       const files = status.workingDirectory.files
@@ -165,7 +161,7 @@ describe('git/commit', () => {
     })
 
     it('can commit some lines from new file', async () => {
-      const previousTip = (await getCommits(repository!, 'HEAD', 1))[0]
+      const previousTip = (await getCommits(repository, 'HEAD', 1))[0]
 
       const newFileName = 'new-file.md'
 
@@ -181,22 +177,22 @@ describe('git/commit', () => {
       )
 
       // commit just this change, ignore everything else
-      const sha = await createCommit(repository!, 'title', [file])
+      const sha = await createCommit(repository, 'title', [file])
       expect(sha).toHaveLength(7)
 
       // verify that the HEAD of the repository has moved
-      const newTip = (await getCommits(repository!, 'HEAD', 1))[0]
+      const newTip = (await getCommits(repository, 'HEAD', 1))[0]
       expect(newTip.sha).not.toEqual(previousTip.sha)
       expect(newTip.summary).toEqual('title')
       expect(newTip.shortSha).toEqual(sha)
 
       // verify that the contents of this new commit are just the new file
-      const changedFiles = await getChangedFiles(repository!, newTip.sha)
-      expect(changedFiles.length).toEqual(1)
-      expect(changedFiles[0].path).toEqual(newFileName)
+      const changesetData = await getChangedFiles(repository, newTip.sha)
+      expect(changesetData.files.length).toEqual(1)
+      expect(changesetData.files[0].path).toEqual(newFileName)
 
       // verify that changes remain for this new file
-      const status = await getStatusOrThrow(repository!)
+      const status = await getStatusOrThrow(repository)
       expect(status.workingDirectory.files.length).toEqual(4)
 
       // verify that the file is now tracked
@@ -208,7 +204,7 @@ describe('git/commit', () => {
     })
 
     it('can commit second hunk from modified file', async () => {
-      const previousTip = (await getCommits(repository!, 'HEAD', 1))[0]
+      const previousTip = (await getCommits(repository, 'HEAD', 1))[0]
 
       const modifiedFile = 'modified-file.md'
 
@@ -221,7 +217,7 @@ describe('git/commit', () => {
         unselectedFile
       )
 
-      const diff = await getTextDiff(repository!, file)
+      const diff = await getTextDiff(repository, file)
 
       const selection = DiffSelection.fromInitialSelection(
         DiffSelectionType.All
@@ -234,21 +230,21 @@ describe('git/commit', () => {
       const updatedFile = file.withSelection(selection)
 
       // commit just this change, ignore everything else
-      const sha = await createCommit(repository!, 'title', [updatedFile])
+      const sha = await createCommit(repository, 'title', [updatedFile])
       expect(sha).toHaveLength(7)
 
       // verify that the HEAD of the repository has moved
-      const newTip = (await getCommits(repository!, 'HEAD', 1))[0]
+      const newTip = (await getCommits(repository, 'HEAD', 1))[0]
       expect(newTip.sha).not.toEqual(previousTip.sha)
       expect(newTip.summary).toEqual('title')
 
       // verify that the contents of this new commit are just the modified file
-      const changedFiles = await getChangedFiles(repository!, newTip.sha)
-      expect(changedFiles.length).toEqual(1)
-      expect(changedFiles[0].path).toEqual(modifiedFile)
+      const changesetData = await getChangedFiles(repository, newTip.sha)
+      expect(changesetData.files.length).toEqual(1)
+      expect(changesetData.files[0].path).toEqual(modifiedFile)
 
       // verify that changes remain for this modified file
-      const status = await getStatusOrThrow(repository!)
+      const status = await getStatusOrThrow(repository)
       expect(status.workingDirectory.files.length).toEqual(4)
 
       // verify that the file is still marked as modified
@@ -260,7 +256,7 @@ describe('git/commit', () => {
     })
 
     it('can commit single delete from modified file', async () => {
-      const previousTip = (await getCommits(repository!, 'HEAD', 1))[0]
+      const previousTip = (await getCommits(repository, 'HEAD', 1))[0]
 
       const fileName = 'modified-file.md'
 
@@ -273,7 +269,7 @@ describe('git/commit', () => {
         unselectedFile
       )
 
-      const diff = await getTextDiff(repository!, modifiedFile)
+      const diff = await getTextDiff(repository, modifiedFile)
 
       const secondRemovedLine = diff.hunks[0].unifiedDiffStart + 5
 
@@ -288,23 +284,23 @@ describe('git/commit', () => {
       )
 
       // commit just this change, ignore everything else
-      const sha = await createCommit(repository!, 'title', [file])
+      const sha = await createCommit(repository, 'title', [file])
       expect(sha).toHaveLength(7)
 
       // verify that the HEAD of the repository has moved
-      const newTip = (await getCommits(repository!, 'HEAD', 1))[0]
+      const newTip = (await getCommits(repository, 'HEAD', 1))[0]
       expect(newTip.sha).not.toEqual(previousTip.sha)
       expect(newTip.summary).toEqual('title')
       expect(newTip.shortSha).toEqual(sha)
 
       // verify that the contents of this new commit are just the modified file
-      const changedFiles = await getChangedFiles(repository!, newTip.sha)
-      expect(changedFiles.length).toEqual(1)
-      expect(changedFiles[0].path).toEqual(fileName)
+      const changesetData = await getChangedFiles(repository, newTip.sha)
+      expect(changesetData.files.length).toEqual(1)
+      expect(changesetData.files[0].path).toEqual(fileName)
     })
 
     it('can commit multiple hunks from modified file', async () => {
-      const previousTip = (await getCommits(repository!, 'HEAD', 1))[0]
+      const previousTip = (await getCommits(repository, 'HEAD', 1))[0]
 
       const modifiedFile = 'modified-file.md'
 
@@ -317,7 +313,7 @@ describe('git/commit', () => {
         unselectedFile
       )
 
-      const diff = await getTextDiff(repository!, file)
+      const diff = await getTextDiff(repository, file)
 
       const selection = DiffSelection.fromInitialSelection(
         DiffSelectionType.All
@@ -334,22 +330,22 @@ describe('git/commit', () => {
       )
 
       // commit just this change, ignore everything else
-      const sha = await createCommit(repository!, 'title', [updatedFile])
+      const sha = await createCommit(repository, 'title', [updatedFile])
       expect(sha).toHaveLength(7)
 
       // verify that the HEAD of the repository has moved
-      const newTip = (await getCommits(repository!, 'HEAD', 1))[0]
+      const newTip = (await getCommits(repository, 'HEAD', 1))[0]
       expect(newTip.sha).not.toEqual(previousTip.sha)
       expect(newTip.summary).toEqual('title')
       expect(newTip.shortSha).toEqual(sha)
 
       // verify that the contents of this new commit are just the modified file
-      const changedFiles = await getChangedFiles(repository!, newTip.sha)
-      expect(changedFiles.length).toEqual(1)
-      expect(changedFiles[0].path).toEqual(modifiedFile)
+      const changesetData = await getChangedFiles(repository, newTip.sha)
+      expect(changesetData.files.length).toEqual(1)
+      expect(changesetData.files[0].path).toEqual(modifiedFile)
 
       // verify that changes remain for this modified file
-      const status = await getStatusOrThrow(repository!)
+      const status = await getStatusOrThrow(repository)
       expect(status.workingDirectory.files.length).toEqual(4)
 
       // verify that the file is still marked as modified
@@ -361,7 +357,7 @@ describe('git/commit', () => {
     })
 
     it('can commit some lines from deleted file', async () => {
-      const previousTip = (await getCommits(repository!, 'HEAD', 1))[0]
+      const previousTip = (await getCommits(repository, 'HEAD', 1))[0]
 
       const deletedFile = 'deleted-file.md'
 
@@ -376,22 +372,22 @@ describe('git/commit', () => {
       )
 
       // commit just this change, ignore everything else
-      const sha = await createCommit(repository!, 'title', [file])
+      const sha = await createCommit(repository, 'title', [file])
       expect(sha).toHaveLength(7)
 
       // verify that the HEAD of the repository has moved
-      const newTip = (await getCommits(repository!, 'HEAD', 1))[0]
+      const newTip = (await getCommits(repository, 'HEAD', 1))[0]
       expect(newTip.sha).not.toEqual(previousTip.sha)
       expect(newTip.summary).toEqual('title')
       expect(newTip.sha.substring(0, 7)).toEqual(sha)
 
       // verify that the contents of this new commit are just the new file
-      const changedFiles = await getChangedFiles(repository!, newTip.sha)
-      expect(changedFiles.length).toEqual(1)
-      expect(changedFiles[0].path).toEqual(deletedFile)
+      const changesetData = await getChangedFiles(repository, newTip.sha)
+      expect(changesetData.files.length).toEqual(1)
+      expect(changesetData.files[0].path).toEqual(deletedFile)
 
       // verify that changes remain for this new file
-      const status = await getStatusOrThrow(repository!)
+      const status = await getStatusOrThrow(repository)
       expect(status.workingDirectory.files.length).toEqual(4)
 
       // verify that the file is now tracked
@@ -407,9 +403,9 @@ describe('git/commit', () => {
 
       await FSE.writeFile(path.join(repo.path, 'foo'), 'foo\n')
 
-      await GitProcess.exec(['add', 'foo'], repo.path)
-      await GitProcess.exec(['commit', '-m', 'Initial commit'], repo.path)
-      await GitProcess.exec(['mv', 'foo', 'bar'], repo.path)
+      await exec(['add', 'foo'], repo.path)
+      await exec(['commit', '-m', 'Initial commit'], repo.path)
+      await exec(['mv', 'foo', 'bar'], repo.path)
 
       await FSE.writeFile(path.join(repo.path, 'bar'), 'bar\n')
 
@@ -437,9 +433,9 @@ describe('git/commit', () => {
 
       await FSE.writeFile(path.join(repo.path, 'foo'), 'line1\n')
 
-      await GitProcess.exec(['add', 'foo'], repo.path)
-      await GitProcess.exec(['commit', '-m', 'Initial commit'], repo.path)
-      await GitProcess.exec(['mv', 'foo', 'bar'], repo.path)
+      await exec(['add', 'foo'], repo.path)
+      await exec(['commit', '-m', 'Initial commit'], repo.path)
+      await exec(['mv', 'foo', 'bar'], repo.path)
 
       await FSE.writeFile(path.join(repo.path, 'bar'), 'line1\nline2\nline3\n')
 
@@ -547,39 +543,173 @@ describe('git/commit', () => {
           f => f.status.kind !== AppFileStatusKind.Untracked
         )
         const manualResolutions = new Map([
-          ['bar', ManualConflictResolutionKind.ours],
+          ['bar', ManualConflictResolution.ours],
         ])
         const sha = await createMergeCommit(
           repository,
           trackedFiles,
           manualResolutions
         )
-        expect(await FSE.pathExists(path.join(repository.path, 'bar'))).toBe(
-          true
-        )
+        expect(
+          await FSE.pathExists(path.join(repository.path, 'bar'))
+        ).toBeTrue()
         const newStatus = await getStatusOrThrow(repository)
         expect(sha).toHaveLength(7)
         expect(newStatus.workingDirectory.files).toHaveLength(1)
       })
+
       it('deletes files chosen to be removed and commits', async () => {
         const status = await getStatusOrThrow(repository)
         const trackedFiles = status.workingDirectory.files.filter(
           f => f.status.kind !== AppFileStatusKind.Untracked
         )
         const manualResolutions = new Map([
-          ['bar', ManualConflictResolutionKind.theirs],
+          ['bar', ManualConflictResolution.theirs],
         ])
         const sha = await createMergeCommit(
           repository,
           trackedFiles,
           manualResolutions
         )
-        expect(await FSE.pathExists(path.join(repository.path, 'bar'))).toBe(
-          false
-        )
+        expect(
+          await FSE.pathExists(path.join(repository.path, 'bar'))
+        ).toBeFalse()
         const newStatus = await getStatusOrThrow(repository)
         expect(sha).toHaveLength(7)
         expect(newStatus.workingDirectory.files).toHaveLength(1)
+      })
+
+      it('checks out our content for file added in both branches', async () => {
+        const status = await getStatusOrThrow(repository)
+        const trackedFiles = status.workingDirectory.files.filter(
+          f => f.status.kind !== AppFileStatusKind.Untracked
+        )
+        const manualResolutions = new Map([
+          ['baz', ManualConflictResolution.ours],
+        ])
+        const sha = await createMergeCommit(
+          repository,
+          trackedFiles,
+          manualResolutions
+        )
+        expect(
+          await FSE.readFile(path.join(repository.path, 'baz'), 'utf8')
+        ).toEqual('b2')
+        const newStatus = await getStatusOrThrow(repository)
+        expect(sha).toHaveLength(7)
+        expect(newStatus.workingDirectory.files).toHaveLength(1)
+      })
+
+      it('checks out their content for file added in both branches', async () => {
+        const status = await getStatusOrThrow(repository)
+        const trackedFiles = status.workingDirectory.files.filter(
+          f => f.status.kind !== AppFileStatusKind.Untracked
+        )
+        const manualResolutions = new Map([
+          ['baz', ManualConflictResolution.theirs],
+        ])
+        const sha = await createMergeCommit(
+          repository,
+          trackedFiles,
+          manualResolutions
+        )
+        expect(
+          await FSE.readFile(path.join(repository.path, 'baz'), 'utf8')
+        ).toEqual('b1')
+        const newStatus = await getStatusOrThrow(repository)
+        expect(sha).toHaveLength(7)
+        expect(newStatus.workingDirectory.files).toHaveLength(1)
+      })
+
+      describe('binary file conflicts', () => {
+        let fileName: string
+        let fileContentsOurs: string, fileContentsTheirs: string
+        beforeEach(async () => {
+          const repoPath = await setupFixtureRepository(
+            'detect-conflict-in-binary-file'
+          )
+          repository = new Repository(repoPath, -1, null, false)
+          fileName = 'my-cool-image.png'
+
+          await exec(['checkout', 'master'], repoPath)
+
+          fileContentsTheirs = await FSE.readFile(
+            path.join(repoPath, fileName),
+            'utf8'
+          )
+
+          await exec(['checkout', 'make-a-change'], repoPath)
+
+          fileContentsOurs = await FSE.readFile(
+            path.join(repoPath, fileName),
+            'utf8'
+          )
+        })
+
+        it('chooses `their` version of a file and commits', async () => {
+          const repo = repository
+
+          await exec(['merge', 'master'], repo.path)
+
+          const status = await getStatusOrThrow(repo)
+          const files = status.workingDirectory.files
+          expect(files).toHaveLength(1)
+
+          const file = files[0]
+          expect(file.status.kind).toBe(AppFileStatusKind.Conflicted)
+          expect(
+            isConflictedFile(file.status) && isManualConflict(file.status)
+          ).toBe(true)
+
+          const trackedFiles = files.filter(
+            f => f.status.kind !== AppFileStatusKind.Untracked
+          )
+
+          const manualResolutions = new Map([
+            [file.path, ManualConflictResolution.theirs],
+          ])
+          await createMergeCommit(repository, trackedFiles, manualResolutions)
+
+          const fileContents = await FSE.readFile(
+            path.join(repository.path, file.path),
+            'utf8'
+          )
+
+          expect(fileContents).not.toStrictEqual(fileContentsOurs)
+          expect(fileContents).toStrictEqual(fileContentsTheirs)
+        })
+
+        it('chooses `our` version of a file and commits', async () => {
+          const repo = repository
+
+          await exec(['merge', 'master'], repo.path)
+
+          const status = await getStatusOrThrow(repo)
+          const files = status.workingDirectory.files
+          expect(files).toHaveLength(1)
+
+          const file = files[0]
+          expect(file.status.kind).toBe(AppFileStatusKind.Conflicted)
+          expect(
+            isConflictedFile(file.status) && isManualConflict(file.status)
+          ).toBe(true)
+
+          const trackedFiles = files.filter(
+            f => f.status.kind !== AppFileStatusKind.Untracked
+          )
+
+          const manualResolutions = new Map([
+            [file.path, ManualConflictResolution.ours],
+          ])
+          await createMergeCommit(repository, trackedFiles, manualResolutions)
+
+          const fileContents = await FSE.readFile(
+            path.join(repository.path, file.path),
+            'utf8'
+          )
+
+          expect(fileContents).toStrictEqual(fileContentsOurs)
+        })
       })
     })
 
@@ -597,7 +727,7 @@ describe('git/commit', () => {
         const status = await getStatusOrThrow(repository)
         expect(
           createMergeCommit(repository, status.workingDirectory.files)
-        ).rejects.toThrow(/Commit failed/i)
+        ).rejects.toThrow('There are no changes to commit.')
       })
     })
   })
@@ -615,7 +745,7 @@ describe('git/commit', () => {
       await FSE.writeFile(firstPath, 'line1\n')
       await FSE.writeFile(secondPath, 'line2\n')
 
-      await GitProcess.exec(['add', '.'], repo.path)
+      await exec(['add', '.'], repo.path)
 
       await FSE.unlink(firstPath)
 
@@ -649,9 +779,9 @@ describe('git/commit', () => {
       const firstPath = path.join(repo.path, 'first')
       await FSE.writeFile(firstPath, 'line1\n')
 
-      await GitProcess.exec(['add', 'first'], repo.path)
-      await GitProcess.exec(['commit', '-am', 'commit first file'], repo.path)
-      await GitProcess.exec(['rm', '--cached', 'first'], repo.path)
+      await exec(['add', 'first'], repo.path)
+      await exec(['commit', '-am', 'commit first file'], repo.path)
+      await exec(['rm', '--cached', 'first'], repo.path)
 
       // if the text is now different, everything is fine
       await FSE.writeFile(firstPath, 'line2\n')
@@ -684,8 +814,8 @@ describe('git/commit', () => {
       await FSE.writeFile(path.join(repo.path, '.gitignore'), '')
 
       // Setup repo to reproduce bug
-      await GitProcess.exec(['add', '.'], repo.path)
-      await GitProcess.exec(['commit', '-m', 'Initial commit'], repo.path)
+      await exec(['add', '.'], repo.path)
+      await exec(['commit', '-m', 'Initial commit'], repo.path)
 
       // Make changes that should remain secret
       await FSE.writeFile(path.join(repo.path, 'secret'), 'Somethign secret\n')
@@ -694,7 +824,7 @@ describe('git/commit', () => {
       await FSE.writeFile(path.join(repo.path, '.gitignore'), 'secret')
 
       // Remove from index to mark as deleted
-      await GitProcess.exec(['rm', '--cached', 'secret'], repo.path)
+      await exec(['rm', '--cached', 'secret'], repo.path)
 
       // Make sure that file is marked as deleted
       const beforeCommit = await getStatusOrThrow(repo)
@@ -708,10 +838,12 @@ describe('git/commit', () => {
       expect(beforeCommit.currentTip).not.toBe(afterCommit.currentTip)
 
       // Verify the file was delete in repo
-      const changedFiles = await getChangedFiles(repo, afterCommit.currentTip!)
-      expect(changedFiles.length).toBe(2)
-      expect(changedFiles[0].status.kind).toBe(AppFileStatusKind.Modified)
-      expect(changedFiles[1].status.kind).toBe(AppFileStatusKind.Deleted)
+      const changesetData = await getChangedFiles(repo, afterCommit.currentTip!)
+      expect(changesetData.files.length).toBe(2)
+      expect(changesetData.files[0].status.kind).toBe(
+        AppFileStatusKind.Modified
+      )
+      expect(changesetData.files[1].status.kind).toBe(AppFileStatusKind.Deleted)
     })
   })
 })

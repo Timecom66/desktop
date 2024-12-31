@@ -1,5 +1,5 @@
 import * as URL from 'url'
-import { testForInvalidChars } from './sanitize-branch'
+import { testForInvalidChars } from './sanitize-ref-name'
 
 export interface IOAuthAction {
   readonly name: 'oauth'
@@ -23,13 +23,6 @@ export interface IOpenRepositoryFromURLAction {
   readonly filepath: string | null
 }
 
-export interface IOpenRepositoryFromPathAction {
-  readonly name: 'open-repository-from-path'
-
-  /** The local path to open. */
-  readonly path: string
-}
-
 export interface IUnknownAction {
   readonly name: 'unknown'
   readonly url: string
@@ -38,10 +31,9 @@ export interface IUnknownAction {
 export type URLActionType =
   | IOAuthAction
   | IOpenRepositoryFromURLAction
-  | IOpenRepositoryFromPathAction
   | IUnknownAction
 
-// eslint-disable-next-line @typescript-eslint/interface-name-prefix
+// eslint-disable-next-line @typescript-eslint/naming-convention
 interface ParsedUrlQueryWithUndefined {
   // `undefined` is added here to ensure we handle the missing querystring key
   // See https://github.com/Microsoft/TypeScript/issues/13778 for discussion about
@@ -101,7 +93,7 @@ export function parseAppURL(url: string): URLActionType {
   }
 
   // Trim the trailing / from the URL
-  const parsedPath = pathName.substr(1)
+  const parsedPath = pathName.substring(1)
 
   if (actionName === 'openrepo') {
     const pr = getQueryStringValue(query, 'pr')
@@ -129,13 +121,6 @@ export function parseAppURL(url: string): URLActionType {
       branch,
       pr,
       filepath,
-    }
-  }
-
-  if (actionName === 'openlocalrepo') {
-    return {
-      name: 'open-repository-from-path',
-      path: decodeURIComponent(parsedPath),
     }
   }
 

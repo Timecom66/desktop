@@ -1,92 +1,28 @@
 import * as React from 'react'
-
-import { Octicon, OcticonSymbol } from '../octicons'
-import { encodePathAsUrl } from '../../lib/path'
-
 import { ReleaseNote, ReleaseSummary } from '../../models/release-notes'
-
 import { updateStore } from '../lib/update-store'
-import { ButtonGroup } from '../lib/button-group'
-import { Button } from '../lib/button'
 import { LinkButton } from '../lib/link-button'
-
 import { Dialog, DialogContent, DialogFooter } from '../dialog'
-import { DialogHeader } from '../dialog/header'
-
 import { RichText } from '../lib/rich-text'
-import { Repository } from '../../models/repository'
-import { getDotComAPIEndpoint } from '../../lib/api'
 import { shell } from '../../lib/app-shell'
 import { ReleaseNotesUri } from '../lib/releases'
-
-// HACK: This is needed because the `Rich`Text` component
-// needs to know what repo to link issues against.
-// Since release notes are Desktop specific, we can't
-// reley on the repo info we keep in state, so we've
-// stubbed out this repo
-const repository = new Repository(
-  '',
-  -1,
-  {
-    dbID: null,
-    name: 'desktop',
-    owner: {
-      id: null,
-      login: 'desktop',
-      endpoint: getDotComAPIEndpoint(),
-      hash: '',
-    },
-    private: false,
-    parent: null,
-    htmlURL: 'https://github.com/desktop/desktop',
-    defaultBranch: 'master',
-    cloneURL: 'https://github.com/desktop/desktop',
-    endpoint: getDotComAPIEndpoint(),
-    fullName: 'desktop/desktop',
-    fork: false,
-    hash: '',
-  },
-  true
-)
-
-const ReleaseNoteHeaderLeftUri = encodePathAsUrl(
-  __dirname,
-  'static/release-note-header-left.svg'
-)
-const ReleaseNoteHeaderRightUri = encodePathAsUrl(
-  __dirname,
-  'static/release-note-header-right.svg'
-)
+import { OkCancelButtonGroup } from '../dialog/ok-cancel-button-group'
+import { DesktopFakeRepository } from '../../lib/desktop-fake-repository'
+import { SandboxedMarkdown } from '../lib/sandboxed-markdown'
+import { Button } from '../lib/button'
+import { Emoji } from '../../lib/emoji'
 
 interface IReleaseNotesProps {
   readonly onDismissed: () => void
-  readonly emoji: Map<string, string>
-  readonly newRelease: ReleaseSummary
+  readonly emoji: Map<string, Emoji>
+  readonly newReleases: ReadonlyArray<ReleaseSummary>
+  readonly underlineLinks: boolean
 }
 
 /**
  * The dialog to show with details about the newest release
  */
 export class ReleaseNotes extends React.Component<IReleaseNotesProps, {}> {
-  private onCloseButtonClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
-    if (this.props.onDismissed) {
-      this.props.onDismissed()
-    }
-  }
-
-  private renderCloseButton() {
-    // We're intentionally using <a> here instead of <button> because
-    // we can't prevent chromium from giving it focus when the the dialog
-    // appears. Setting tabindex to -1 doesn't work. This might be a bug,
-    // I don't know and we may want to revisit it at some point but for
-    // now an anchor will have to do.
-    return (
-      <a className="close" onClick={this.onCloseButtonClick}>
-        <Octicon symbol={OcticonSymbol.x} />
-      </a>
-    )
-  }
-
   private renderList(
     releaseEntries: ReadonlyArray<ReleaseNote>,
     header: string
@@ -104,7 +40,7 @@ export class ReleaseNotes extends React.Component<IReleaseNotesProps, {}> {
             text={entry.message}
             emoji={this.props.emoji}
             renderUrlsAsLinks={true}
-            repository={repository}
+            repository={DesktopFakeRepository}
           />
         </li>
       )
@@ -146,45 +82,114 @@ export class ReleaseNotes extends React.Component<IReleaseNotesProps, {}> {
     )
   }
 
+  /**
+   * If there is just one release, it returns it. If multiple, it merges the release notes.
+   */
+  private getDisplayRelease = () => {
+    const { newReleases } = this.props
+
+    const latestRelease = newReleases.at(0)
+    const oldestRelease = newReleases.at(-1)
+
+    if (
+      latestRelease === undefined ||
+      oldestRelease === undefined ||
+      latestRelease === oldestRelease
+    ) {
+      return latestRelease
+    }
+
+    return {
+      latestVersion: `${oldestRelease.latestVersion} - ${latestRelease.latestVersion}`,
+      datePublished: `${oldestRelease.datePublished} to ${latestRelease.datePublished}`,
+      enhancements: newReleases.flatMap(r => r.enhancements),
+      bugfixes: newReleases.flatMap(r => r.bugfixes),
+      pretext: newReleases.flatMap(r => r.pretext),
+      other: [],
+      thankYous: [],
+    }
+  }
+
+  private renderPretext = (pretext: ReadonlyArray<ReleaseNote>) => {
+    if (pretext.length === 0) {
+      return
+    }
+
+    return (
+      <SandboxedMarkdown
+        markdown={pretext[0].message}
+        emoji={this.props.emoji}
+        onMarkdownLinkClicked={this.onMarkdownLinkClicked}
+        underlineLinks={this.props.underlineLinks}
+        ariaLabel="Release notes generated from markdown"
+      />
+    )
+  }
+
+  private onDismissed = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault()
+    this.props.onDismissed()
+  }
+
+  private renderButtons = () => {
+    const latestVersion = this.props.newReleases[0].latestVersion
+    if (latestVersion === __APP_VERSION__) {
+      return (
+        <Button type="submit" onClick={this.onDismissed}>
+          Close
+        </Button>
+      )
+    }
+
+    return (
+      <OkCancelButtonGroup
+        destructive={true}
+        okButtonText={
+          __DARWIN__ ? 'Install and Restart' : 'Install and restart'
+        }
+        cancelButtonText="Close"
+      />
+    )
+  }
+
   public render() {
-    const release = this.props.newRelease
+    const release = this.getDisplayRelease()
+
+    if (release === undefined) {
+      return null
+    }
+
+    const { latestVersion, datePublished, enhancements, bugfixes, pretext } =
+      release
 
     const contents =
-      release.enhancements.length > 0 && release.bugfixes.length > 0
+      enhancements.length > 0 && bugfixes.length > 0
         ? this.drawTwoColumnLayout(release)
         : this.drawSingleColumnLayout(release)
 
-    return (
-      <Dialog id="release-notes" onDismissed={this.props.onDismissed}>
-        <DialogHeader title={` `} dismissable={false}>
-          <div className="release-notes-header">
-            <img
-              className="release-note-graphic-left"
-              src={ReleaseNoteHeaderLeftUri}
-            />
-            <div className="title">
-              <p className="version">Version {release.latestVersion}</p>
-              <p className="date">{release.datePublished}</p>
-            </div>
-            <img
-              className="release-note-graphic-right"
-              src={ReleaseNoteHeaderRightUri}
-            />
-            {this.renderCloseButton()}
-          </div>
-        </DialogHeader>
+    const dialogHeader = (
+      <>
+        <span className="version">Version {latestVersion}</span>
+        <span className="date">{datePublished}</span>
+      </>
+    )
 
-        <DialogContent>{contents}</DialogContent>
+    return (
+      <Dialog
+        id="release-notes"
+        onDismissed={this.props.onDismissed}
+        onSubmit={this.updateNow}
+        title={dialogHeader}
+      >
+        <DialogContent>
+          {this.renderPretext(pretext)}
+          {contents}
+        </DialogContent>
         <DialogFooter>
           <LinkButton onClick={this.showAllReleaseNotes}>
             View all release notes
           </LinkButton>
-          <ButtonGroup destructive={true}>
-            <Button type="submit">Close</Button>
-            <Button onClick={this.updateNow}>
-              {__DARWIN__ ? 'Install and Restart' : 'Install and restart'}
-            </Button>
-          </ButtonGroup>
+          {this.renderButtons()}
         </DialogFooter>
       </Dialog>
     )
@@ -196,5 +201,9 @@ export class ReleaseNotes extends React.Component<IReleaseNotesProps, {}> {
 
   private showAllReleaseNotes = () => {
     shell.openExternal(ReleaseNotesUri)
+  }
+
+  private onMarkdownLinkClicked = (url: string) => {
+    shell.openExternal(url)
   }
 }

@@ -45,7 +45,11 @@ const extensionModes: ReadonlyArray<IModeDefinition> = [
     install: () => import('codemirror/mode/javascript/javascript'),
     mappings: {
       '.ts': 'text/typescript',
+      '.mts': 'text/typescript',
+      '.cts': 'text/typescript',
       '.js': 'text/javascript',
+      '.mjs': 'text/javascript',
+      '.cjs': 'text/javascript',
       '.json': 'application/json',
     },
   },
@@ -59,7 +63,11 @@ const extensionModes: ReadonlyArray<IModeDefinition> = [
     install: () => import('codemirror/mode/jsx/jsx'),
     mappings: {
       '.tsx': 'text/typescript-jsx',
+      '.mtsx': 'text/typescript-jsx',
+      '.ctsx': 'text/typescript-jsx',
       '.jsx': 'text/jsx',
+      '.mjsx': 'text/jsx',
+      '.cjsx': 'text/jsx',
     },
   },
   {
@@ -72,6 +80,8 @@ const extensionModes: ReadonlyArray<IModeDefinition> = [
   {
     install: () => import('codemirror/mode/htmlembedded/htmlembedded'),
     mappings: {
+      '.aspx': 'application/x-aspx',
+      '.cshtml': 'application/x-aspx',
       '.jsp': 'application/x-jsp',
     },
   },
@@ -94,6 +104,7 @@ const extensionModes: ReadonlyArray<IModeDefinition> = [
     mappings: {
       '.markdown': 'text/x-markdown',
       '.md': 'text/x-markdown',
+      '.mdx': 'text/x-markdown',
     },
   },
   {
@@ -108,12 +119,22 @@ const extensionModes: ReadonlyArray<IModeDefinition> = [
     mappings: {
       '.xml': 'text/xml',
       '.xaml': 'text/xml',
+      '.xsd': 'text/xml',
       '.csproj': 'text/xml',
       '.fsproj': 'text/xml',
       '.vcxproj': 'text/xml',
       '.vbproj': 'text/xml',
       '.svg': 'text/xml',
       '.resx': 'text/xml',
+      '.props': 'text/xml',
+      '.targets': 'text/xml',
+    },
+  },
+  {
+    install: () => import('codemirror/mode/diff/diff'),
+    mappings: {
+      '.diff': 'text/x-diff',
+      '.patch': 'text/x-diff',
     },
   },
   {
@@ -129,6 +150,11 @@ const extensionModes: ReadonlyArray<IModeDefinition> = [
       '.h': 'text/x-c',
       '.cpp': 'text/x-c++src',
       '.hpp': 'text/x-c++src',
+      '.cc': 'text/x-c++src',
+      '.hh': 'text/x-c++src',
+      '.hxx': 'text/x-c++src',
+      '.cxx': 'text/x-c++src',
+      '.ino': 'text/x-c++src',
       '.kt': 'text/x-kotlin',
     },
   },
@@ -187,6 +213,8 @@ const extensionModes: ReadonlyArray<IModeDefinition> = [
     install: () => import('codemirror/mode/python/python'),
     mappings: {
       '.py': 'text/x-python',
+      '.pyi': 'text/x-python',
+      '.vpy': 'text/x-python',
     },
   },
   {
@@ -249,9 +277,10 @@ const extensionModes: ReadonlyArray<IModeDefinition> = [
     },
   },
   {
-    install: () => import('codemirror/mode/lua/lua'),
+    install: () => import('codemirror-mode-luau'),
     mappings: {
       '.lua': 'text/x-lua',
+      '.luau': 'text/x-luau',
     },
   },
   {
@@ -264,6 +293,156 @@ const extensionModes: ReadonlyArray<IModeDefinition> = [
     install: () => import('codemirror/mode/julia/julia'),
     mappings: {
       '.jl': 'text/x-julia',
+    },
+  },
+  {
+    install: () => import('codemirror/mode/stex/stex'),
+    mappings: {
+      '.tex': 'text/x-stex',
+    },
+  },
+  {
+    install: () => import('codemirror/mode/sparql/sparql'),
+    mappings: {
+      '.rq': 'application/sparql-query',
+    },
+  },
+  {
+    install: () => import('codemirror/mode/stylus/stylus'),
+    mappings: {
+      '.styl': 'text/x-styl',
+    },
+  },
+  {
+    install: () => import('codemirror/mode/soy/soy'),
+    mappings: {
+      '.soy': 'text/x-soy',
+    },
+  },
+  {
+    install: () => import('codemirror/mode/smalltalk/smalltalk'),
+    mappings: {
+      '.st': 'text/x-stsrc',
+    },
+  },
+  {
+    install: () => import('codemirror/mode/slim/slim'),
+    mappings: {
+      '.slim': 'application/x-slim',
+    },
+  },
+  {
+    install: () => import('codemirror/mode/haml/haml'),
+    mappings: {
+      '.haml': 'text/x-haml',
+    },
+  },
+  {
+    install: () => import('codemirror/mode/sieve/sieve'),
+    mappings: {
+      '.sieve': 'application/sieve',
+    },
+  },
+  {
+    install: () => import('codemirror/mode/scheme/scheme'),
+    mappings: {
+      '.ss': 'text/x-scheme',
+      '.sls': 'text/x-scheme',
+      '.scm': 'text/x-scheme',
+    },
+  },
+  {
+    install: () => import('codemirror/mode/rst/rst'),
+    mappings: {
+      '.rst': 'text/x-rst',
+    },
+  },
+  {
+    install: () => import('codemirror/mode/rpm/rpm'),
+    mappings: {
+      '.rpm': 'text/x-rpm-spec',
+    },
+  },
+  {
+    install: () => import('codemirror/mode/q/q'),
+    mappings: {
+      '.q': 'text/x-q',
+    },
+  },
+  {
+    install: () => import('codemirror/mode/puppet/puppet'),
+    mappings: {
+      '.pp': 'text/x-puppet',
+    },
+  },
+  {
+    install: () => import('codemirror/mode/pug/pug'),
+    mappings: {
+      '.pug': 'text/x-pug',
+    },
+  },
+  {
+    install: () => import('codemirror/mode/protobuf/protobuf'),
+    mappings: {
+      '.proto': 'text/x-protobuf',
+    },
+  },
+  {
+    install: () => import('codemirror/mode/properties/properties'),
+    mappings: {
+      '.properties': 'text/x-properties',
+      '.gitattributes': 'text/x-properties',
+      '.gitignore': 'text/x-properties',
+      '.editorconfig': 'text/x-properties',
+      '.ini': 'text/x-ini',
+    },
+  },
+  {
+    install: () => import('codemirror/mode/pig/pig'),
+    mappings: {
+      '.pig': 'text/x-pig',
+    },
+  },
+  {
+    install: () => import('codemirror/mode/asciiarmor/asciiarmor'),
+    mappings: {
+      '.pgp': 'application/pgp',
+    },
+  },
+  {
+    install: () => import('codemirror/mode/oz/oz'),
+    mappings: {
+      '.oz': 'text/x-oz',
+    },
+  },
+  {
+    install: () => import('codemirror/mode/pascal/pascal'),
+    mappings: {
+      '.pas': 'text/x-pascal',
+    },
+  },
+  {
+    install: () => import('codemirror/mode/toml/toml'),
+    mappings: {
+      '.toml': 'text/x-toml',
+    },
+  },
+  {
+    install: () => import('codemirror/mode/dart/dart'),
+    mappings: {
+      '.dart': 'application/dart',
+    },
+  },
+  {
+    install: () => import('codemirror-mode-zig'),
+    mappings: {
+      '.zig': 'text/x-zig',
+    },
+  },
+  {
+    install: () => import('codemirror/mode/cmake/cmake'),
+    mappings: {
+      '.cmake': 'text/x-cmake',
     },
   },
 ]
@@ -284,6 +463,12 @@ const basenameModes: ReadonlyArray<IModeDefinition> = [
     install: () => import('codemirror/mode/dockerfile/dockerfile'),
     mappings: {
       dockerfile: 'text/x-dockerfile',
+    },
+  },
+  {
+    install: () => import('codemirror/mode/toml/toml'),
+    mappings: {
+      'cargo.lock': 'text/x-toml',
     },
   },
 ]
@@ -316,15 +501,15 @@ for (const basenameMode of basenameModes) {
   }
 }
 
-function guessMimeType(contents: string) {
-  if (contents.startsWith('<?xml')) {
+function guessMimeType(contents: ReadonlyArray<string>) {
+  const firstLine = contents[0]
+
+  if (firstLine.startsWith('<?xml')) {
     return 'text/xml'
   }
 
-  if (contents.startsWith('#!')) {
-    const m = /^#!.*?(ts-node|node|bash|sh|python(?:[\d.]+)?)\r?\n/g.exec(
-      contents
-    )
+  if (firstLine.startsWith('#!')) {
+    const m = /^#!.*?(ts-node|node|bash|sh|python(?:[\d.]+)?)/g.exec(firstLine)
 
     if (m) {
       switch (m[1]) {
@@ -354,7 +539,7 @@ async function detectMode(
   const mimeType =
     extensionMIMEMap.get(request.extension.toLowerCase()) ||
     basenameMIMEMap.get(request.basename.toLowerCase()) ||
-    guessMimeType(request.contents)
+    guessMimeType(request.contentLines)
 
   if (!mimeType) {
     return null
@@ -407,7 +592,7 @@ function getInnerModeName(
  * @param stream       The StringStream for the current line
  * @param state        The current mode state (if any)
  * @param addModeClass Whether or not to append the current (inner) mode name
- *                     as an extra CSS clas to the token, indicating the mode
+ *                     as an extra CSS class to the token, indicating the mode
  *                     that produced it, prefixed with "cm-m-". For example,
  *                     tokens from the XML mode will get the cm-m-xml class.
  */
@@ -429,11 +614,10 @@ function readToken(
   throw new Error(`Mode ${getModeName(mode)} failed to advance stream.`)
 }
 
-onmessage = async (ev: MessageEvent) => {
-  const request = ev.data as IHighlightRequest
+onmessage = async (ev: MessageEvent<IHighlightRequest>) => {
+  const request = ev.data
 
   const tabSize = request.tabSize || 4
-  const contents = request.contents
   const addModeClass = request.addModeClass === true
 
   const mode = await detectMode(request)
@@ -452,7 +636,7 @@ onmessage = async (ev: MessageEvent) => {
   // line we need so that we can bail immediately when we've reached it.
   const maxLine = lineFilter ? Math.max(...lineFilter) : null
 
-  const lines = contents.split(/\r?\n/)
+  const lines = request.contentLines.concat()
   const state: any = mode.startState ? mode.startState() : null
 
   const tokens: ITokens = {}
@@ -479,7 +663,11 @@ onmessage = async (ev: MessageEvent) => {
       continue
     }
 
-    const lineCtx = { lines, line: ix }
+    const lineCtx = {
+      lines,
+      line: ix,
+      lookAhead: (n: number) => lines[ix + n],
+    }
     const lineStream = new StringStream(line, tabSize, lineCtx)
 
     while (!lineStream.eol()) {

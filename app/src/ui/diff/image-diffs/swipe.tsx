@@ -16,13 +16,35 @@ export class Swipe extends React.Component<
   public constructor(props: ICommonImageDiffProperties) {
     super(props)
 
-    this.state = { percentage: 1 }
+    this.state = { percentage: 0 }
   }
 
   public render() {
     const style: React.CSSProperties = {
       height: this.props.maxSize.height,
       width: this.props.maxSize.width,
+    }
+
+    const swiperWidth = this.props.maxSize.width * (1 - this.state.percentage)
+
+    const previousStyle: React.CSSProperties = {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      height: this.props.maxSize.height,
+      width: this.props.maxSize.width,
+      clipPath: `inset(0 ${Math.floor(swiperWidth)}px 0 0)`,
+    }
+
+    const currentStyle: React.CSSProperties = {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      height: this.props.maxSize.height,
+      width: this.props.maxSize.width,
+      clipPath: `inset(0 0 0 ${Math.floor(
+        this.props.maxSize.width - swiperWidth
+      )}px)`,
     }
 
     const maxSize: React.CSSProperties = {
@@ -34,27 +56,19 @@ export class Swipe extends React.Component<
       <div className="image-diff-swipe">
         <div className="sizing-container" ref={this.props.onContainerRef}>
           <div className="image-container" style={style}>
-            <div className="image-diff-current" style={style}>
+            <div className="image-diff-previous" style={previousStyle}>
+              <ImageContainer
+                image={this.props.previous}
+                onElementLoad={this.props.onPreviousImageLoad}
+                style={maxSize}
+              />
+            </div>
+            <div className="image-diff-current" style={currentStyle}>
               <ImageContainer
                 image={this.props.current}
                 onElementLoad={this.props.onCurrentImageLoad}
                 style={maxSize}
               />
-            </div>
-            <div
-              className="swiper"
-              style={{
-                width: this.props.maxSize.width * (1 - this.state.percentage),
-                height: this.props.maxSize.height,
-              }}
-            >
-              <div className="image-diff-previous" style={style}>
-                <ImageContainer
-                  image={this.props.previous}
-                  onElementLoad={this.props.onPreviousImageLoad}
-                  style={maxSize}
-                />
-              </div>
             </div>
           </div>
         </div>

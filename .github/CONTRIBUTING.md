@@ -33,11 +33,7 @@ Please report unacceptable behavior to [opensource+desktop@github.com](mailto:op
 
 ### The Roadmap
 
-GitHub Desktop recently announced its
-[1.0 release](https://github.com/blog/2437-announcing-github-desktop-1-0) and
-are working towards deprecating the classic Mac and Windows applications.
-
-Beyond that, we are working on a roadmap you can read [here](https://github.com/desktop/desktop/blob/development/docs/process/roadmap.md).
+We are working on a roadmap you can read [here](https://github.com/desktop/desktop/blob/development/docs/process/roadmap.md).
 The immediate milestones are more detailed, and the latter milestones are more
 fuzzy and subject to change.
 
@@ -57,8 +53,7 @@ reports :mag_right:.
 Before creating bug reports, please check [this list](#before-submitting-a-bug-report)
 as you might find out that you don't need to create one. When you are creating
 a bug report, please [include as many details as possible](#how-do-i-submit-a-good-bug-report).
-Fill out [the required template](ISSUE_TEMPLATE/bug_report.md), the information
-it asks for helps us resolve issues faster.
+Fill out the required template, the information it asks for helps us resolve issues faster.
 
 #### Before Submitting A Bug Report
 
@@ -67,11 +62,11 @@ to see if the problem has already been reported. If it does exist, add a
 :thumbsup: to the issue to indicate this is also an issue for you, and add a
 comment to the existing issue if there is extra information you can contribute.
 
-#### How Do I Submit A (Good) Bug Report?
+#### How Do I Submit A Bug Report?
 
 Bugs are tracked as [GitHub issues](https://guides.github.com/features/issues/).
 
-Simply create an issue on the [GitHub Desktop issue tracker](https://github.com/desktop/desktop/issues/new?template=bug_report.md)
+Simply create an issue on the [GitHub Desktop issue tracker](https://github.com/desktop/desktop/issues/new?template=bug_report.yaml)
 and fill out the provided issue template.
 
 The information we are interested in includes:
@@ -92,7 +87,7 @@ community understand your suggestion :pencil: and find related suggestions
 Before creating enhancement suggestions, please check [this list](#before-submitting-an-enhancement-suggestion)
 as you might find out that you don't need to create one. When you are creating
 an enhancement suggestion, please [include as many details as possible](#how-do-i-submit-a-good-enhancement-suggestion).
-Fill in [the template](ISSUE_TEMPLATE/problem-to-raise.md), including the steps
+Fill in [the template](ISSUE_TEMPLATE/feature_request.yaml), including the steps
 that you imagine you would take if the feature you're requesting existed.
 
 #### Before Submitting An Enhancement Suggestion
@@ -102,11 +97,11 @@ to see if the enhancement has already been suggested. If it has, add a
 :thumbsup: to indicate your interest in it, or comment if there is additional
 information you would like to add.
 
-#### How Do I Submit A (Good) Enhancement Suggestion?
+#### How Do I Submit An Enhancement Suggestion?
 
 Enhancement suggestions are tracked as [GitHub issues](https://guides.github.com/features/issues/).
 
-Simply create an issue on the [GitHub Desktop issue tracker](https://github.com/desktop/desktop/issues/new?template=feature_request.md)
+Simply create an issue on the [GitHub Desktop issue tracker](https://github.com/desktop/desktop/issues/new?template=feature_request.yaml)
 and fill out the provided issue template.
 
 Some additional advice:
@@ -150,4 +145,4 @@ These documents are useful resources for contributors  to learn more about the p
  - [Release Planning](https://github.com/desktop/desktop/blob/development/docs/process/release-planning.md)
  - [Issue Triage](https://github.com/desktop/desktop/blob/development/docs/process/issue-triage.md)
  - [Issue and Pull Request Labels](https://github.com/desktop/desktop/blob/development/docs/process/labels.md)
- - [Pull Request Triage](https://github.com/desktop/desktop/blob/development/docs/process/pull-request-triage.md)
+ - [Pull Requests](https://github.com/desktop/desktop/blob/development/docs/process/pull-requests.md)
